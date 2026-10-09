@@ -1,5 +1,5 @@
 ---
-name: yijie-code-visualization
+name: callescape
 description: Create Callscape JSON graphs from source code changes, showing changed functions, their before/after behavior, and caller-to-callee relationships.
 ---
 

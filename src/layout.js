@@ -36,6 +36,62 @@ export function estimateNodeSize(func) {
   return { width, height, lineWidth }
 }
 
+function callTraversalOrder(graph) {
+  const outgoing = new Map(graph.functions.map((func) => [func.id, []]))
+  const incoming = new Map(graph.functions.map((func) => [func.id, 0]))
+  for (const call of graph.calls) {
+    outgoing.get(call.from).push(call.to)
+    incoming.set(call.to, incoming.get(call.to) + 1)
+  }
+
+  const order = new Map()
+  const visit = (id) => {
+    if (order.has(id)) return
+    order.set(id, order.size)
+    for (const callee of outgoing.get(id)) visit(callee)
+  }
+  for (const func of graph.functions) {
+    if (incoming.get(func.id) === 0) visit(func.id)
+  }
+  for (const func of graph.functions) visit(func.id)
+  return order
+}
+
+function alignRanksToCallOrder(graph, dagreGraph, dimensions, direction) {
+  const order = callTraversalOrder(graph)
+  const orderAxis = direction === 'TB' ? 'x' : 'y'
+  const rankAxis = direction === 'TB' ? 'y' : 'x'
+  const sizeAxis = direction === 'TB' ? 'width' : 'height'
+  const ranks = new Map()
+
+  for (const func of graph.functions) {
+    const rank = Math.round(dagreGraph.node(func.id)[rankAxis] * 1000) / 1000
+    if (!ranks.has(rank)) ranks.set(rank, [])
+    ranks.get(rank).push(func.id)
+  }
+
+  for (const ids of ranks.values()) {
+    if (ids.length < 2) continue
+    const spatialOrder = [...ids].sort((a, b) => dagreGraph.node(a)[orderAxis] - dagreGraph.node(b)[orderAxis])
+    const callOrder = [...ids].sort((a, b) => order.get(a) - order.get(b))
+    if (spatialOrder.every((id, index) => id === callOrder[index])) continue
+
+    const starts = ids.map((id) => dagreGraph.node(id)[orderAxis] - dimensions.get(id)[sizeAxis] / 2)
+    const ends = ids.map((id) => dagreGraph.node(id)[orderAxis] + dimensions.get(id)[sizeAxis] / 2)
+    const start = Math.min(...starts)
+    const span = Math.max(...ends) - start
+    const contentSize = ids.reduce((sum, id) => sum + dimensions.get(id)[sizeAxis], 0)
+    const gap = Math.max(56, (span - contentSize) / (ids.length - 1))
+
+    let cursor = start
+    for (const id of callOrder) {
+      const size = dimensions.get(id)[sizeAxis]
+      dagreGraph.node(id)[orderAxis] = cursor + size / 2
+      cursor += size + gap
+    }
+  }
+}
+
 export function layoutGraph(graph, direction = 'TB') {
   if (!['TB', 'LR'].includes(direction)) {
     throw new Error(`Unsupported graph direction: ${direction}`)
@@ -83,6 +139,7 @@ export function layoutGraph(graph, direction = 'TB') {
   })
 
   dagre.layout(dagreGraph)
+  alignRanksToCallOrder(graph, dagreGraph, dimensions, direction)
 
   const nodes = graph.functions.map((func) => {
     const size = dimensions.get(func.id)

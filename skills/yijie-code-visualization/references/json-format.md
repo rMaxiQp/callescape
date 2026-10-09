@@ -33,7 +33,7 @@ Every call endpoint must refer to a function in its `functions` array.
 - `functions`: required array. Each entry needs a unique non-empty string `id` and at least one non-empty `before` or `after` behavior string. Optional `name` defaults to `id`; optional `file` defaults to an empty string.
 - `calls`: optional array. Each `from` and `to` is a function ID in `functions`; optional `label` is a compact string such as `before`, `after`, or a condition. Parallel calls are allowed.
 
-Function status follows populated sides: both means modified, only `after` means added, and only `before` means removed. Calls from a caller must appear in execution order. Labels must not contain the UI's sequence number.
+Function status follows populated sides: both means modified, only `after` means added, and only `before` means removed. Calls from a caller must appear in execution order. Callscape uses that order for edge numbers and sibling placement (left to right in vertical layout, top to bottom in horizontal layout). Labels must not contain the UI's sequence number.
 
 ## Pseudocode and diff
 

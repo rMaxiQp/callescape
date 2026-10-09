@@ -1,6 +1,6 @@
 # Callscape
 
-Callscape explains code changes as an interactive function call graph. Each function card shows pseudocode before and after the change. Calls point from caller to callee and are numbered in execution order.
+Callscape explains code changes as an interactive function call graph. Each function card shows pseudocode before and after the change. Calls point from caller to callee and are numbered and placed in execution order.
 
 ## Requirements and installation
 

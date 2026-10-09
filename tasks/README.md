@@ -1,9 +1,5 @@
 # Callscape rebuild tasks
 
-Work through these tasks in numerical order. Each task is intended to be independently reviewable and should leave the repository buildable where applicable.
-
-| Task | Outcome |
-| --- | --- |
-| [task-010](task-010-build-and-functional-qa.md) | Production build and manual functional verification |
+The rebuild task list is complete. See [QA.md](../QA.md) for verified behavior and browser interactions that still warrant a manual check.
 
 Do not run linting unless explicitly requested after functional testing.

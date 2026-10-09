@@ -4,7 +4,6 @@ Work through these tasks in numerical order. Each task is intended to be indepen
 
 | Task | Outcome |
 | --- | --- |
-| [task-002](task-002-cli-and-filesystem-plugin.md) | Folder-aware CLI and safe Vite filesystem integration |
 | [task-003](task-003-graph-model.md) | Graph parsing, normalization, validation, and line diffing |
 | [task-004](task-004-layout-and-edges.md) | Dagre layout, sizing, ordered edges, and handles |
 | [task-005](task-005-graph-canvas.md) | React Flow function nodes and graph controls |

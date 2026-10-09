@@ -4,7 +4,6 @@ Work through these tasks in numerical order. Each task is intended to be indepen
 
 | Task | Outcome |
 | --- | --- |
-| [task-008](task-008-polish-and-sample.md) | Complete visual styling and representative example graph |
 | [task-009](task-009-docs-and-skill-sync.md) | README, agent guidance, and authoring-skill synchronization |
 | [task-010](task-010-build-and-functional-qa.md) | Production build and manual functional verification |
 

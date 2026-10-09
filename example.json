@@ -1,0 +1,54 @@
+{
+  "title": "Checkout payment extraction",
+  "functions": [
+    {
+      "id": "checkout",
+      "name": "checkout(cart, customer)",
+      "file": "src/checkout/checkout.ts",
+      "before": "// TypeScript\nvalidateCart(cart)\ntotal = calculateTotal(cart)\nlegacyReceipt = chargeCard(customer.card, total)\norder = saveOrder(cart, customer, legacyReceipt)\nreturn order",
+      "after": "// TypeScript\nvalidateCart(cart)\ntotal = calculateTotal(cart)\npayment = processPayment(customer, total, retry = false)\nif payment.failed:\n  payment = processPayment(customer, total, retry = true)\nreceipt = createReceipt(payment, cart, customer, includeTaxBreakdown = true)\norder = saveOrder(cart, customer, receipt)\nreturn order"
+    },
+    {
+      "id": "charge-card",
+      "name": "chargeCard(card, amount)",
+      "file": "src/checkout/legacyPayment.ts",
+      "before": "request = buildLegacyChargeRequest(card, amount)\nresponse = legacyGateway.send(request)\nif response.declined:\n  throw PaymentDeclined(response.reason)\nreturn response.receipt",
+      "after": ""
+    },
+    {
+      "id": "process-payment",
+      "name": "processPayment(customer, amount, retry)",
+      "file": "src/payments/processPayment.ts",
+      "before": "",
+      "after": "method = selectPaymentMethod(customer.savedMethods, customer.preference)\nrequest = buildPaymentRequest(method, amount, customer.billingAddress, idempotencyKeyFor(customer.id, retry))\nresult = paymentGateway.authorize(request)\nif result.requiresAction:\n  return { failed: true, reason: result.actionReason }\nreturn { failed: false, transactionId: result.transactionId, amount: amount }"
+    },
+    {
+      "id": "create-receipt",
+      "name": "createReceipt(payment, cart, customer, includeTaxBreakdown)",
+      "file": "src/checkout/receipts.ts",
+      "before": "",
+      "after": "items = cart.items.map(item => describePurchasedItem(item.sku, item.quantity, item.unitPrice))\nreceipt = { transactionId: payment.transactionId, customerId: customer.id, items: items }\nif includeTaxBreakdown:\n  receipt.tax = calculateTaxByJurisdiction(cart, customer.shippingAddress)\nreturn receipt"
+    },
+    {
+      "id": "summarize-order",
+      "name": "summarizeOrder(order)",
+      "file": "src/orders/summary.ts",
+      "before": "// TypeScript\nheading = formatOrderHeading(order)\ntotal = formatTotal(order.subtotal)\nreturn heading + '\\n' + total",
+      "after": "// TypeScript\nheading = formatOrderHeading(order)\ntotal = formatTotal(order.subtotal, order.tax)\nreturn heading + '\\n' + total"
+    },
+    {
+      "id": "format-total",
+      "name": "formatTotal(subtotal, tax)",
+      "file": "src/orders/formatTotal.ts",
+      "before": "currency = displayCurrency(subtotal)\nreturn currency",
+      "after": "currency = displayCurrency(subtotal)\nreturn currency + ' (tax ' + displayCurrency(tax) + ')'"
+    }
+  ],
+  "calls": [
+    { "from": "checkout", "to": "charge-card", "label": "before" },
+    { "from": "checkout", "to": "process-payment", "label": "after · primary" },
+    { "from": "checkout", "to": "process-payment", "label": "after · retry" },
+    { "from": "checkout", "to": "create-receipt", "label": "after" },
+    { "from": "summarize-order", "to": "format-total", "label": "before/after" }
+  ]
+}

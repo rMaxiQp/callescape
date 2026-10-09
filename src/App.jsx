@@ -210,6 +210,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('callscape-sidebar-open') !== 'false')
   const [resizing, setResizing] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const paths = Object.keys(graphFileSources).sort()
   const absolutePath = activePath ? `${graphRootPath.replace(/\/$/, '')}${activePath}` : graphRootPath
 
@@ -241,6 +242,25 @@ export default function App() {
       setError(null)
     } catch (cause) {
       setError(`${path}: ${cause.message}`)
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteCandidate || deleting) return
+    setDeleting(true)
+    try {
+      const response = await fetch(`/__callscape/graph-file?path=${encodeURIComponent(deleteCandidate)}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const message = await response.text()
+        throw new Error(message || `Delete failed (${response.status})`)
+      }
+      setDeleteCandidate(null)
+      window.location.reload()
+    } catch (cause) {
+      setError(`Could not delete ${deleteCandidate}: ${cause.message}`)
+      setDeleteCandidate(null)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -286,7 +306,19 @@ export default function App() {
           <div className="empty-state">No valid graph JSON files in {graphRootName}.</div>
         )}
       </section>
-      {deleteCandidate && <div className="pending-delete" role="status">Delete action for {deleteCandidate} is coming next.</div>}
+      {deleteCandidate && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleting) setDeleteCandidate(null) }}>
+          <div className="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description">
+            <h2 id="delete-title">Delete graph file?</h2>
+            <p id="delete-description">This removes the selected JSON file from the graph folder.</p>
+            <code>{deleteCandidate}</code>
+            <div className="dialog-actions">
+              <button onClick={() => setDeleteCandidate(null)} disabled={deleting}>Cancel</button>
+              <button className="danger-button" onClick={confirmDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete file'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

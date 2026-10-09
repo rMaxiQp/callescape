@@ -587,3 +587,74 @@ code {
   color: #e6eef8;
   font-size: 12px;
 }
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(3 8 17 / 75%);
+}
+
+.delete-dialog {
+  width: min(430px, calc(100vw - 40px));
+  padding: 22px;
+  border: 1px solid #52647b;
+  border-radius: 12px;
+  background: #18263a;
+  box-shadow: 0 25px 70px rgb(0 0 0 / 50%);
+}
+
+.delete-dialog h2 {
+  margin: 0 0 8px;
+  color: #f1f5fa;
+  font-size: 18px;
+}
+
+.delete-dialog p {
+  margin: 0 0 14px;
+  color: #aebed1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.delete-dialog code {
+  display: block;
+  overflow: auto;
+  padding: 9px;
+  border: 1px solid #3a4b61;
+  border-radius: 5px;
+  color: #dce8f6;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.dialog-actions button {
+  padding: 8px 12px;
+  border: 1px solid #4a5e76;
+  border-radius: 6px;
+  background: #27394f;
+  color: #e4edf7;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dialog-actions .danger-button {
+  border-color: #b74f5c;
+  background: #a93949;
+  color: white;
+}
+
+.dialog-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

@@ -1,0 +1,50 @@
+# Callscape JSON contract
+
+```json
+{
+  "title": "Checkout payment extraction",
+  "functions": [
+    {
+      "id": "checkout",
+      "name": "checkout(cart)",
+      "file": "src/checkout.ts",
+      "before": "// TypeScript\nvalidateCart(cart)\nreturn saveOrder(cart)",
+      "after": "// TypeScript\nvalidateCart(cart)\nreceipt = processPayment(cart)\nreturn saveOrder(cart, receipt)"
+    },
+    {
+      "id": "payment",
+      "name": "processPayment(cart)",
+      "file": "src/payment.ts",
+      "before": "",
+      "after": "return gateway.charge(cart.total)"
+    }
+  ],
+  "calls": [
+    { "from": "checkout", "to": "payment", "label": "after" }
+  ]
+}
+```
+
+Every call endpoint must refer to a function in its `functions` array.
+
+## Fields
+
+- `title`: optional string; defaults to `Untitled call graph`.
+- `functions`: required array. Each entry needs a unique non-empty string `id` and at least one non-empty `before` or `after` behavior string. Optional `name` defaults to `id`; optional `file` defaults to an empty string.
+- `calls`: optional array. Each `from` and `to` is a function ID in `functions`; optional `label` is a compact string such as `before`, `after`, or a condition. Parallel calls are allowed.
+
+Function status follows populated sides: both means modified, only `after` means added, and only `before` means removed. Calls from a caller must appear in execution order. Labels must not contain the UI's sequence number.
+
+## Pseudocode and diff
+
+Each behavior side is a multiline string with `\n` separators in JSON. Prefer statements that resemble code, preserve indentation, and include enough unchanged surrounding behavior to explain small edits. Keep common lines textually identical and in the same order. The viewer uses an exact-line longest-common-subsequence diff: common lines stay neutral, deleted lines are red, and added lines are green. A moved line may appear as deletion and addition.
+
+Use `""` for an absent side. Do not write separator or change-marker lines. The viewer accepts legacy arrays as newline-separated text and removes lines whose trimmed text is exactly `====================`.
+
+For each separate call tree, start the root function's populated sides with the same short source-language comment, such as `// TypeScript`.
+
+## Files and workflow
+
+Save a UTF-8 `.json` file beneath the chosen graph folder. Callscape recursively discovers JSON files except hidden paths, `node_modules`, `dist`, and root package manifests. The primary command is `callscape [folder]`; it opens the browser and reloads when files change. Its in-app delete action removes only a selected JSON file after confirmation. A static `npm run build` embeds the current files as a snapshot and cannot provide the live delete endpoint.
+
+Unless the user requests another location, use `~/src/Planning/code-visualization` for generated graphs and return an absolute file link.

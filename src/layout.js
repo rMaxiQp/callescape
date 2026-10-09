@@ -96,6 +96,7 @@ export function layoutGraph(graph, direction = 'TB') {
       },
       width: size.width,
       height: size.height,
+      style: { width: size.width, height: size.height },
       data: {
         func,
         status: functionStatus(func),

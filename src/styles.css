@@ -95,3 +95,214 @@ code {
 .file-preview button[aria-current="page"] {
   border-color: #60a5fa;
 }
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 0;
+  background: #0b1422;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 62px;
+  padding: 0 1rem;
+  border-bottom: 1px solid #2b3c52;
+  background: #111d2d;
+  white-space: nowrap;
+}
+
+.preview-toolbar > span {
+  color: #94a7bd;
+  font-size: 0.8rem;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+  overflow: auto;
+}
+
+.preview-actions button,
+.error-banner button {
+  padding: 0.4rem 0.65rem;
+  border: 1px solid #40536b;
+  border-radius: 0.4rem;
+  background: #1b2b40;
+  color: #dce8f6;
+  cursor: pointer;
+}
+
+.preview-actions button[aria-current="page"] {
+  border-color: #60a5fa;
+  color: #bfdbfe;
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.react-flow__node-function {
+  border: 0;
+  background: transparent;
+}
+
+.function-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  border: 1px solid #3c4d64;
+  border-radius: 10px;
+  background: #172337;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 30%);
+}
+
+.function-card.selected {
+  border-color: #7ab5ff;
+  box-shadow: 0 0 0 2px rgb(96 165 250 / 32%), 0 12px 30px rgb(0 0 0 / 30%);
+}
+
+.function-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  height: 62px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #34455d;
+  overflow: hidden;
+}
+
+.function-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.function-title-row strong {
+  overflow: hidden;
+  color: #eff5fd;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-badge.modified { background: #493c25; color: #ffd28b; }
+.status-badge.added { background: #1b4235; color: #a7f3ca; }
+.status-badge.removed { background: #4b2a34; color: #ffc1c7; }
+
+.function-file {
+  overflow: hidden;
+  color: #9bb0c8;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: calc(100% - 62px);
+  overflow: hidden;
+  border-radius: 0 0 10px 10px;
+}
+
+.code-panels.added,
+.code-panels.removed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.code-panel {
+  min-width: 0;
+  padding: 0 12px 8px;
+  background: #172337;
+}
+
+.code-panel + .code-panel {
+  border-left: 1px solid #34455d;
+}
+
+.code-panel-heading {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  color: #9bb0c8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.code-lines {
+  max-width: var(--line-width);
+  color: #dbe6f3;
+  font: 11px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  user-select: text;
+}
+
+.diff-line {
+  display: block;
+  min-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-line.removed { background: rgb(213 80 89 / 22%); color: #ffc4c9; }
+.diff-line.added { background: rgb(63 178 114 / 21%); color: #bbf3ce; }
+
+.function-card .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid #a8b7ca;
+  background: #4d6684;
+}
+
+.react-flow__controls,
+.react-flow__minimap {
+  overflow: hidden;
+  border: 1px solid #40536b;
+  border-radius: 8px;
+  background: #152237;
+  box-shadow: 0 8px 25px rgb(0 0 0 / 25%);
+}
+
+.react-flow__controls-button {
+  border-bottom-color: #40536b;
+  background: #152237;
+  color: #dce8f6;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.empty-state {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  color: #9bb0c8;
+}
+
+.error-banner {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid #8b3947;
+  background: #4b2530;
+  color: #ffdce0;
+}

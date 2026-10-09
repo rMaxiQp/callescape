@@ -74,3 +74,24 @@ code {
   background: #1e293b;
   color: #dbeafe;
 }
+
+.file-preview {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 20rem;
+  overflow: auto;
+}
+
+.file-preview button {
+  padding: 0.5rem;
+  border: 1px solid #334155;
+  border-radius: 0.35rem;
+  background: #182438;
+  color: #dbeafe;
+  cursor: pointer;
+  text-align: left;
+}
+
+.file-preview button[aria-current="page"] {
+  border-color: #60a5fa;
+}

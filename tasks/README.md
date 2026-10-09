@@ -4,7 +4,6 @@ Work through these tasks in numerical order. Each task is intended to be indepen
 
 | Task | Outcome |
 | --- | --- |
-| [task-006](task-006-file-navigation.md) | File tree, header, layout switch, and persistent sidebar |
 | [task-007](task-007-deletion-and-live-reload.md) | Safe deletion flow and filesystem-driven reloads |
 | [task-008](task-008-polish-and-sample.md) | Complete visual styling and representative example graph |
 | [task-009](task-009-docs-and-skill-sync.md) | README, agent guidance, and authoring-skill synchronization |

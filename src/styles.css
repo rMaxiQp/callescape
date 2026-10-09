@@ -306,3 +306,284 @@ code {
   background: #4b2530;
   color: #ffdce0;
 }
+
+.app-shell {
+  flex-direction: row;
+}
+
+.sidebar {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  height: 100%;
+  border-right: 1px solid #2b3c52;
+  background: #101b2b;
+}
+
+.sidebar.collapsed {
+  overflow: hidden;
+  border: 0;
+}
+
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 62px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2b3c52;
+  color: #a8b9ce;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.file-count {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #26374d;
+  color: #dce8f6;
+  letter-spacing: 0;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 0;
+}
+
+.folder-tree button {
+  font-size: 12px;
+}
+
+.tree-folder,
+.tree-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 31px;
+  padding-right: 8px;
+  border: 0;
+  color: #bdc9d9;
+}
+
+.tree-folder {
+  gap: 5px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tree-folder:hover,
+.tree-row:hover {
+  background: #1b2b40;
+}
+
+.tree-folder span,
+.tree-open span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row.active {
+  background: #203754;
+  color: #d9eaff;
+}
+
+.tree-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tree-delete {
+  display: grid;
+  flex: none;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8b9ce;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tree-row:hover .tree-delete,
+.tree-delete:focus-visible {
+  opacity: 1;
+}
+
+.tree-delete:hover {
+  background: #503241;
+  color: #ffc4c9;
+}
+
+.tree-empty {
+  padding: 0 16px;
+  color: #8fa3ba;
+  font-size: 12px;
+}
+
+.sidebar-legend {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-top: 1px solid #2b3c52;
+  color: #a8b9ce;
+  font-size: 11px;
+}
+
+.sidebar-legend > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+}
+
+.legend-swatch.removed { background: #c26972; }
+.legend-swatch.added { background: #57af7c; }
+
+.sidebar-resize {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.sidebar-resize:hover { background: rgb(96 165 250 / 35%); }
+
+.workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 62px;
+  min-height: 62px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2b3c52;
+  background: #111d2d;
+}
+
+.icon-button {
+  display: grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #b7c8dc;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: #41536c;
+  background: #1a2a3d;
+}
+
+.graph-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.graph-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.graph-summary strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+}
+
+.graph-summary span {
+  flex: none;
+  color: #9bb0c8;
+  font-size: 11px;
+}
+
+.graph-path {
+  margin-top: 4px;
+  overflow-x: auto;
+  color: #8fa3ba;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  scrollbar-width: none;
+  user-select: text;
+  white-space: nowrap;
+}
+
+.layout-switch {
+  display: flex;
+  flex: none;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #36485f;
+  border-radius: 7px;
+  background: #19283a;
+}
+
+.layout-switch button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8b9ce;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.layout-switch button.active {
+  background: #324961;
+  color: #eff6ff;
+}
+
+.pending-delete {
+  position: fixed;
+  z-index: 50;
+  right: 20px;
+  bottom: 20px;
+  padding: 10px 14px;
+  border: 1px solid #566b83;
+  border-radius: 8px;
+  background: #1c2d41;
+  color: #e6eef8;
+  font-size: 12px;
+}

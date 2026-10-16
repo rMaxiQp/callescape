@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -23,16 +23,32 @@ import {
   Trash2,
 } from 'lucide-react'
 import { graphFileSources, graphReadOnly, graphRootName, graphRootPath, initialReviewFilters, initialReviewMode } from 'virtual:graph-files'
-import { diffPseudocode, firstValidGraph, parseGraph } from './graph.js'
+import { callSiteLines, diffPseudocode, firstValidGraph, parseGraph } from './graph.js'
 import { layoutGraph } from './layout.js'
 
-function Pseudocode({ lines, side, lineWidth }) {
+// The edge under the pointer, so the caller's card can mark the lines that
+// produce it. Context keeps hover out of node data, which would re-run layout.
+const HoveredCallContext = createContext(null)
+
+function lineHighlight(line, index, hovered, callSites) {
+  if (callSites?.has(index)) return ' linked'
+  if (!hovered) return ''
+  if (line === hovered || (hovered.pair != null && line.pair === hovered.pair)) return ' linked'
+  return line.group === hovered.group ? ' in-hunk' : ''
+}
+
+function Pseudocode({ lines, side, lineWidth, hovered, onHover, callSites }) {
   return (
     <div className="code-panel">
       <div className="code-panel-heading">{side}</div>
       <div className="code-lines nodrag nopan" style={{ '--line-width': `${lineWidth}ch` }}>
         {lines.map((line, index) => (
-          <span className={`diff-line ${line.type}`} key={index}>
+          <span
+            className={`diff-line ${line.type}${lineHighlight(line, index, hovered, callSites)}`}
+            key={index}
+            onMouseEnter={onHover && (() => onHover(line))}
+            onMouseLeave={onHover && (() => onHover(null))}
+          >
             {line.text || '\u00a0'}
           </span>
         ))}
@@ -65,6 +81,16 @@ function EdgeHandles({ ids, direction, type }) {
 function FunctionNode({ data, selected }) {
   const { func, status, direction, incoming, outgoing, lineWidth } = data
   const diff = useMemo(() => diffPseudocode(func.before, func.after), [func.before, func.after])
+  const [hovered, setHovered] = useState(null)
+  const hoveredCall = useContext(HoveredCallContext)
+  const callee = hoveredCall?.callerId === func.id ? hoveredCall.callee : null
+  const callSites = useMemo(() => callee && {
+    before: new Set(callSiteLines(diff.before.map((line) => line.text), callee)),
+    after: new Set(callSiteLines(diff.after.map((line) => line.text), callee)),
+  }, [diff, callee])
+  const panelProps = func.before && func.after
+    ? { lineWidth, hovered, onHover: setHovered }
+    : { lineWidth }
   return (
     <div className={`function-card ${status}${selected ? ' selected' : ''}`}>
       <EdgeHandles ids={incoming} direction={direction} type="target" />
@@ -76,8 +102,8 @@ function FunctionNode({ data, selected }) {
         {func.file && <div className="function-file" title={func.file}>{func.file}</div>}
       </header>
       <div className={`code-panels ${status}`}>
-        {func.before && <Pseudocode lines={diff.before} side="Before" lineWidth={lineWidth} />}
-        {func.after && <Pseudocode lines={diff.after} side="After" lineWidth={lineWidth} />}
+        {func.before && <Pseudocode lines={diff.before} side="Before" callSites={callSites?.before} {...panelProps} />}
+        {func.after && <Pseudocode lines={diff.after} side="After" callSites={callSites?.after} {...panelProps} />}
       </div>
       <EdgeHandles ids={outgoing} direction={direction} type="source" />
     </div>
@@ -151,24 +177,35 @@ function FolderTree({ paths, activePath, onOpen, onDelete }) {
   )
 }
 
-function graphEdges(edges) {
-  return edges.map((edge) => ({
-    ...edge,
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#8292a9', width: 16, height: 16 },
-    style: { stroke: '#8292a9', strokeWidth: 1.5 },
-    labelStyle: { fill: '#d9e3f0', fontSize: 11, fontWeight: 600 },
-    labelBgStyle: { fill: '#1b293c', stroke: '#46566d', strokeWidth: 1 },
-    labelBgPadding: [6, 4],
-    labelBgBorderRadius: 5,
-    pathOptions: { borderRadius: 12, offset: 24 },
-  }))
+function graphEdges(edges, hoveredEdgeId) {
+  return edges.map((edge) => {
+    const hovered = edge.id === hoveredEdgeId
+    const stroke = hovered ? '#b4ceff' : '#8292a9'
+    return {
+      ...edge,
+      markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 16, height: 16 },
+      style: { stroke, strokeWidth: hovered ? 2.5 : 1.5 },
+      labelStyle: { fill: '#d9e3f0', fontSize: 11, fontWeight: 600 },
+      labelBgStyle: { fill: '#1b293c', stroke: '#46566d', strokeWidth: 1 },
+      labelBgPadding: [6, 4],
+      labelBgBorderRadius: 5,
+      pathOptions: { borderRadius: 12, offset: 24 },
+    }
+  })
 }
 
 function GraphCanvas({ graph, direction }) {
   const layout = useMemo(() => layoutGraph(graph, direction), [graph, direction])
   const [nodes, , onNodesChange] = useNodesState(layout.nodes)
   const { edges } = layout
-  const coloredEdges = useMemo(() => graphEdges(edges), [edges])
+  const [hoveredCall, setHoveredCall] = useState(null)
+  const coloredEdges = useMemo(() => graphEdges(edges, hoveredCall?.edgeId), [edges, hoveredCall])
+  const functionsById = useMemo(() => new Map(graph.functions.map((func) => [func.id, func])), [graph])
+  const hoverEdge = (_, edge) => setHoveredCall({
+    edgeId: edge.id,
+    callerId: edge.source,
+    callee: functionsById.get(edge.target),
+  })
   const miniMapColor = (node) => ({
     modified: '#e9ad56',
     added: '#6ecf95',
@@ -178,22 +215,26 @@ function GraphCanvas({ graph, direction }) {
 
   return (
     <div className="canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={coloredEdges}
-        onNodesChange={onNodesChange}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-        minZoom={0.15}
-        maxZoom={2}
-        nodesConnectable={false}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color="#35445a" />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeColor={miniMapColor} maskColor="rgba(7, 14, 26, .68)" />
-      </ReactFlow>
+      <HoveredCallContext.Provider value={hoveredCall}>
+        <ReactFlow
+          nodes={nodes}
+          edges={coloredEdges}
+          onNodesChange={onNodesChange}
+          onEdgeMouseEnter={hoverEdge}
+          onEdgeMouseLeave={() => setHoveredCall(null)}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+          minZoom={0.15}
+          maxZoom={2}
+          nodesConnectable={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color="#35445a" />
+          <Controls showInteractive={false} />
+          <MiniMap pannable zoomable nodeColor={miniMapColor} maskColor="rgba(7, 14, 26, .68)" />
+        </ReactFlow>
+      </HoveredCallContext.Provider>
     </div>
   )
 }

@@ -109,23 +109,105 @@ export function diffPseudocode(before, after) {
     }
   }
 
-  const matchedBefore = new Set()
-  const matchedAfter = new Set()
+  // A group is either one unchanged pair or one run of changes between unchanged
+  // lines. Lines sharing a pair id are the same line on both sides.
+  const beforeDiff = []
+  const afterDiff = []
+  const hunks = []
+  let group = -1
+  let nextPair = 0
+  let hunk = null
   let i = 0
   let j = 0
-  while (i < n && j < m) {
-    if (beforeLines[i] === afterLines[j]) {
-      matchedBefore.add(i++)
-      matchedAfter.add(j++)
-    } else if (matrix[i + 1][j] >= matrix[i][j + 1]) {
-      i++
+  while (i < n || j < m) {
+    if (i < n && j < m && beforeLines[i] === afterLines[j]) {
+      group++
+      hunk = null
+      const pair = nextPair++
+      beforeDiff.push({ text: beforeLines[i++], type: 'unchanged', group, pair })
+      afterDiff.push({ text: afterLines[j++], type: 'unchanged', group, pair })
+      continue
+    }
+    if (!hunk) {
+      group++
+      hunk = { removed: [], added: [] }
+      hunks.push(hunk)
+    }
+    if (j >= m || (i < n && matrix[i + 1][j] >= matrix[i][j + 1])) {
+      const line = { text: beforeLines[i++], type: 'removed', group, pair: null }
+      beforeDiff.push(line)
+      hunk.removed.push(line)
     } else {
-      j++
+      const line = { text: afterLines[j++], type: 'added', group, pair: null }
+      afterDiff.push(line)
+      hunk.added.push(line)
     }
   }
 
-  return {
-    before: beforeLines.map((text, index) => ({ text, type: matchedBefore.has(index) ? 'unchanged' : 'removed' })),
-    after: afterLines.map((text, index) => ({ text, type: matchedAfter.has(index) ? 'unchanged' : 'added' })),
+  for (const { removed, added } of hunks) {
+    for (const [r, a] of pairSimilarLines(removed, added)) {
+      r.pair = a.pair = nextPair++
+    }
   }
+
+  return { before: beforeDiff, after: afterDiff }
+}
+
+const MIN_PAIR_SIMILARITY = 0.5
+
+function lineWords(text) {
+  return new Set(text.match(/[A-Za-z_$][\w$]*/g) ?? [])
+}
+
+function similarity(a, b) {
+  if (a.size === 0 || b.size === 0) return 0
+  let shared = 0
+  for (const word of a) if (b.has(word)) shared++
+  return (2 * shared) / (a.size + b.size)
+}
+
+// Order-preserving alignment that maximizes total similarity, so pairs never
+// cross and each line pairs at most once.
+function pairSimilarLines(removed, added) {
+  const removedWords = removed.map((line) => lineWords(line.text))
+  const addedWords = added.map((line) => lineWords(line.text))
+  const score = (r, a) => {
+    const value = similarity(removedWords[r], addedWords[a])
+    return value >= MIN_PAIR_SIMILARITY ? value : 0
+  }
+  const best = Array.from({ length: removed.length + 1 }, () => Array(added.length + 1).fill(0))
+  for (let r = removed.length - 1; r >= 0; r--) {
+    for (let a = added.length - 1; a >= 0; a--) {
+      const matched = score(r, a) > 0 ? score(r, a) + best[r + 1][a + 1] : 0
+      best[r][a] = Math.max(matched, best[r + 1][a], best[r][a + 1])
+    }
+  }
+
+  const pairs = []
+  let r = 0
+  let a = 0
+  while (r < removed.length && a < added.length) {
+    if (score(r, a) > 0 && best[r][a] === score(r, a) + best[r + 1][a + 1]) {
+      pairs.push([removed[r++], added[a++]])
+    } else if (best[r][a] === best[r + 1][a]) {
+      r++
+    } else {
+      a++
+    }
+  }
+  return pairs
+}
+
+// A callee's bare name is its name up to the parameter list, after any
+// qualifier, so "Payments.chargeCard(card)" is looked up as "chargeCard".
+export function calleeIdentifier(func) {
+  const bare = func.name.split('(')[0].trim()
+  const member = bare.split('.').pop()
+  return member || bare || func.id
+}
+
+export function callSiteLines(lines, callee) {
+  const identifier = calleeIdentifier(callee).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = new RegExp(`(?<![\\w$])${identifier}(?![\\w$])`)
+  return lines.flatMap((text, index) => (pattern.test(text) ? [index] : []))
 }

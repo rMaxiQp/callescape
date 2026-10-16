@@ -9,7 +9,7 @@ There are two ways to use it:
 
 ## Install
 
-You'll need Node.js 20.19+ or 22.12+ and npm. Python 3.9+ is needed only for `callescape review`.
+`install.sh` installs the Codex authoring skill for your user account:
 
 ```bash
 git clone git@github.com:zmxzz/callescape.git
@@ -17,36 +17,32 @@ cd callescape
 bash install.sh
 ```
 
-If you already have this checkout, just run `bash install.sh` from its root. The installer installs dependencies and adds both commands under `~/.local/bin`. If your shell can't find them, add that directory to your `PATH`:
+From a checkout, the installer links `~/.codex/skills/callescape` to `skills/callescape` so skill edits stay current. It respects `CODEX_HOME` if set. Use `--source DIRECTORY` for another checkout, or `--repo URL` to copy only the skill from a published Git repository. It does not install app dependencies or CLI commands, and it won't overwrite an existing unrelated skill.
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-The installer won't overwrite unrelated commands. You can use `--prefix DIRECTORY` for another installation location or `--source DIRECTORY` to install from a different local checkout. If the repository is public, `install.sh` also supports `--repo URL` for a downloaded installer.
+To run the app from this checkout, install Node.js 20.19+ or 22.12+ and npm, then run `npm ci`. Python 3.9+ is needed only for `callescape review`.
 
 ## Review Python changes
 
-Go to the Python repository you want to inspect and run:
+From the Callscape checkout, pass the Python repository you want to inspect:
 
 ```bash
-cd /path/to/python-project
-callescape review
+npm run app -- review /path/to/python-project
 ```
 
 This compares the current working tree with `HEAD` and opens the graph in your browser. To compare two commits instead:
 
 ```bash
-callescape review --base HEAD~1 --head HEAD
+npm run app -- review /path/to/python-project --base HEAD~1 --head HEAD
 ```
 
-You can also pass the repository path, so you don't have to change directories:
+You can also run the script from the Python repository to review its current directory:
 
 ```bash
-callescape review /path/to/python-project
+cd /path/to/python-project
+node /path/to/callescape/bin/callscape.mjs review
 ```
 
-Review reads Python source but never runs it. It starts with changed Python files, then parses only files that may contain direct callers or callees—not every Python file in the repository. It shows changed functions and those direct dependencies using the actual source on both sides. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Restart the command to pick up new edits.
+Review reads Python source but never runs it. It starts with changed Python files, then narrows direct-caller candidates by imports and call names and loads directly imported callees. It does not parse every Python file in the repository. It shows changed functions and those direct dependencies using the actual source on both sides. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Restart the command to pick up new edits.
 
 Nothing is saved to the repository: the review graph stays in memory, and the delete button is disabled in review mode.
 
@@ -55,10 +51,10 @@ Nothing is saved to the repository: the review graph stays in memory, and the de
 If you have Callscape JSON files, point the viewer at their folder:
 
 ```bash
-callscape /path/to/graphs
+npm run app -- /path/to/graphs
 ```
 
-Or run `callscape` from inside that folder. It finds JSON files in subfolders, shows them in the sidebar, and reloads when they change. You can delete a selected graph file from the sidebar after confirming. Hidden folders, `node_modules`, `dist`, and root package manifests are skipped; deletion is restricted to JSON files inside the chosen folder.
+Run these commands from the Callscape checkout. To use the current directory as the graph folder, run `npm run app`. The app finds JSON files in subfolders, shows them in the sidebar, and reloads when they change. You can delete a selected graph file from the sidebar after confirming. Hidden folders, `node_modules`, `dist`, and root package manifests are skipped; deletion is restricted to JSON files inside the chosen folder.
 
 A small graph looks like this:
 

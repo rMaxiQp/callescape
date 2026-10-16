@@ -130,14 +130,24 @@ class PythonDiffTests(unittest.TestCase):
             for name in ("old", "new"):
                 (root / f"{name}.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
             (root / "main.py").write_text(
-                "from old import helper\n\ndef run():\n    return helper()\n", encoding="utf-8"
+                "from old import helper\n\ndef run():\n    return helper()\n\ndef idle():\n    return 1\n",
+                encoding="utf-8",
+            )
+            (root / "idle_caller.py").write_text(
+                "from main import idle\n\ndef unrelated():\n    return idle()\n",
+                encoding="utf-8",
             )
             run("git", "add", ".", cwd=root)
             run("git", "commit", "-qm", "before", cwd=root)
             (root / "main.py").write_text(
-                "from new import helper\n\ndef run():\n    return helper()\n", encoding="utf-8"
+                "from new import helper\n\ndef run():\n    return helper()\n\ndef idle():\n    return 1\n",
+                encoding="utf-8",
             )
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"main.py:run", "old.py:helper", "new.py:helper"},
+            )
             self.assertEqual(
                 [(item["to"], item["label"]) for item in graph["calls"]],
                 [("old.py:helper", "before"), ("new.py:helper", "after")],
@@ -160,6 +170,95 @@ class PythonDiffTests(unittest.TestCase):
             self.assertEqual(
                 {item["id"] for item in graph["functions"]},
                 {"new.py:added", "existing.py:helper"},
+            )
+
+    def test_common_names_do_not_pull_in_unrelated_modules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            for package in ("pkg", "other"):
+                (root / package).mkdir()
+                (root / package / "core.py").write_text(
+                    "def run():\n    return 1\n", encoding="utf-8"
+                )
+                (root / package / "app.py").write_text(
+                    f"from {package}.core import run\n\ndef entry():\n    return run()\n",
+                    encoding="utf-8",
+                )
+            (root / "pkg/another.py").write_text(
+                "import pkg.core as core\n\ndef entry_two():\n    return core.run()\n",
+                encoding="utf-8",
+            )
+            (root / "pkg/prefix.py").write_text(
+                "import pkg as package\n\ndef entry_three():\n    return package.core.run()\n",
+                encoding="utf-8",
+            )
+            for index in range(20):
+                (root / f"noise_{index}.py").write_text(
+                    "def run():\n    return 1\n", encoding="utf-8"
+                )
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "pkg/core.py").write_text("def run():\n    return 2\n", encoding="utf-8")
+            result = run(sys.executable, str(SCRIPT), cwd=root)
+            graph = json.loads(result.stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"pkg/core.py:run", "pkg/app.py:entry", "pkg/another.py:entry_two",
+                 "pkg/prefix.py:entry_three"},
+            )
+            self.assertEqual(result.stderr.count("Checking 3 related file(s)"), 2)
+
+    def test_relative_import_callers_are_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            (root / "pkg").mkdir()
+            (root / "pkg/core.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+            (root / "pkg/app.py").write_text(
+                "from .core import run\n\ndef direct():\n    return run()\n",
+                encoding="utf-8",
+            )
+            (root / "pkg/other.py").write_text(
+                "from . import core\n\ndef through_module():\n    return core.run()\n",
+                encoding="utf-8",
+            )
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "pkg/core.py").write_text("def run():\n    return 2\n", encoding="utf-8")
+            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"pkg/core.py:run", "pkg/app.py:direct", "pkg/other.py:through_module"},
+            )
+
+    def test_package_and_multiline_import_callers_are_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            (root / "pkg").mkdir()
+            (root / "pkg/__init__.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+            (root / "pkg/app.py").write_text(
+                "from . import run\n\ndef direct():\n    return run()\n",
+                encoding="utf-8",
+            )
+            (root / "outside.py").write_text(
+                "from pkg import (\n    run,\n)\n\ndef external():\n    return run()\n",
+                encoding="utf-8",
+            )
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "pkg/__init__.py").write_text("def run():\n    return 2\n", encoding="utf-8")
+            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"pkg/__init__.py:run", "pkg/app.py:direct", "outside.py:external"},
             )
 
 

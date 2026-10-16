@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -43,25 +44,71 @@ def changed_python_paths(root, base, head):
     return changed
 
 
-def files_mentioning(root, revision, names):
-    if not names:
+def grep_paths(root, revision, patterns, paths=None, extended=False):
+    if not patterns or paths is not None and not paths:
         return set()
-    arguments = ["grep", "-l", "-z", "-F"]
-    if revision == "worktree":
-        arguments.append("--untracked")
-    for name in sorted(names):
-        arguments.extend(("-e", name))
-    if revision != "worktree":
-        arguments.append(revision)
-    arguments.extend(("--", "*.py"))
-    result = subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, check=False)
-    if result.returncode == 1:
-        return set()
-    if result.returncode:
-        raise ValueError(result.stderr.decode("utf-8", errors="replace").strip() or "git grep failed")
     prefix = f"{revision}:" if revision != "worktree" else ""
-    return {path.decode("utf-8", errors="surrogateescape").removeprefix(prefix)
-            for path in result.stdout.split(b"\0") if path}
+    batches = [[f":(literal){path}" for path in sorted(paths)[start:start + 128]]
+               for start in range(0, len(paths), 128)] if paths is not None else [["*.py"]]
+    found = set()
+    for batch in batches:
+        arguments = ["grep", "-l", "-z", "-E" if extended else "-F"]
+        if revision == "worktree":
+            arguments.append("--untracked")
+        for pattern in sorted(patterns):
+            arguments.extend(("-e", pattern))
+        if revision != "worktree":
+            arguments.append(revision)
+        arguments.extend(("--", *batch))
+        result = subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, check=False)
+        if result.returncode == 1:
+            continue
+        if result.returncode:
+            raise ValueError(result.stderr.decode("utf-8", errors="replace").strip() or "git grep failed")
+        found.update(path.decode("utf-8", errors="surrogateescape").removeprefix(prefix)
+                     for path in result.stdout.split(b"\0") if path)
+    return found
+
+
+def files_importing_module(root, revision, module, changed_paths):
+    escaped_module = re.escape(module)
+    leaf = re.escape(module.rsplit(".", 1)[-1])
+    parent, _, _ = module.rpartition(".")
+    # Only import statements can supply names resolved by imports_for().
+    patterns = {
+        rf"^[[:space:]]*from[[:space:]]+{escaped_module}[[:space:]]+import",
+        rf"^[[:space:]]*import[[:space:]]*.*[[:space:],]{escaped_module}([[:space:],]|$)",
+    }
+    if parent:
+        patterns.add(
+            rf"^[[:space:]]*from[[:space:]]+{re.escape(parent)}[[:space:]]+import[[:space:]]*.*[[:space:],(]{leaf}([[:space:],)]|$)"
+        )
+        patterns.add(
+            rf"^[[:space:]]*from[[:space:]]+{re.escape(parent)}[[:space:]]+import[[:space:]]*[(]"
+        )
+    candidates = grep_paths(root, revision, patterns, extended=True)
+
+    # Relative imports mention only the leaf, so constrain them to the package tree.
+    package_roots = set()
+    for path in changed_paths:
+        if module_name(path) != module:
+            continue
+        parts = Path(path).parts
+        if len(parts) > 1:
+            package_roots.add("/".join(parts[:2] if parts[0] == "src" else parts[:1]) + "/")
+    if package_roots:
+        relative_patterns = {
+            rf"^[[:space:]]*from[[:space:]]+[.]+{leaf}[[:space:]]+import",
+            rf"^[[:space:]]*from[[:space:]]+[.]+[[:space:]]+import[[:space:]]*.*[[:space:],(]{leaf}([[:space:],)]|$)",
+            r"^[[:space:]]*from[[:space:]]+[.]+[[:space:]]+import[[:space:]]*[(]",
+        }
+        if any(path.endswith("/__init__.py") and module_name(path) == module for path in changed_paths):
+            relative_patterns.add(r"^[[:space:]]*from[[:space:]]+[.]+[[:space:]]+import")
+        candidates.update(
+            path for path in grep_paths(root, revision, relative_patterns, extended=True)
+            if any(path.startswith(prefix) for prefix in package_roots)
+        )
+    return candidates
 
 
 def read_source(root, revision, relative_path):
@@ -325,17 +372,42 @@ def generate(root, base, head):
                    or before[identifier].source != after[identifier].source}
     for path in changed_paths:
         module = module_name(path)
-        if before_snapshot.imports.get(module) != after_snapshot.imports.get(module):
-            changed_ids.update(func.id for func in list(before.values()) + list(after.values())
-                               if func.file == path)
+        old_imports = before_snapshot.imports.get(module, {})
+        new_imports = after_snapshot.imports.get(module, {})
+        changed_aliases = {alias for alias in old_imports.keys() | new_imports.keys()
+                           if old_imports.get(alias) != new_imports.get(alias)}
+        if changed_aliases:
+            for func in list(before.values()) + list(after.values()):
+                if func.file != path:
+                    continue
+                if any((name := dotted_name(expression)) and name.split(".")[0] in changed_aliases
+                       for expression in func.calls):
+                    changed_ids.add(func.id)
 
     if not changed_ids:
         return {"title": f"Python changes: {base} → {head}", "functions": [], "calls": []}
 
-    names = {identifier.rsplit(":", 1)[-1].rsplit(".", 1)[-1] for identifier in changed_ids}
+    names_by_module = {}
+    qualnames_by_module = {}
+    for identifier in changed_ids:
+        file, qualname = identifier.rsplit(":", 1)
+        module = module_name(file)
+        names_by_module.setdefault(module, set()).add(qualname.rsplit(".", 1)[-1])
+        qualnames_by_module.setdefault(module, set()).add(qualname)
     for snapshot in (before_snapshot, after_snapshot):
         candidates = snapshot.outgoing_dependency_paths(changed_ids)
-        candidates.update(files_mentioning(root, snapshot.revision, names))
+        for module, names in names_by_module.items():
+            importers = files_importing_module(root, snapshot.revision, module, changed_paths)
+            candidates.update(grep_paths(root, snapshot.revision, names, paths=importers))
+            parts = module.split(".")
+            for split in range(1, len(parts)):
+                prefix = ".".join(parts[:split])
+                remaining = ".".join(parts[split:])
+                prefix_importers = files_importing_module(root, snapshot.revision, prefix, set())
+                suffixes = {f"{remaining}.{qualname}"
+                            for qualname in qualnames_by_module[module]}
+                candidates.update(grep_paths(root, snapshot.revision, suffixes,
+                                             paths=prefix_importers))
         print(f"Checking {len(candidates - snapshot.loaded)} related file(s) at {snapshot.revision}",
               file=sys.stderr)
         snapshot.load(candidates)

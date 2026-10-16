@@ -1,4 +1,4 @@
-// Shape of the virtual module that the Vite plugin in vite.config.js emits.
+// Shape of the virtual module that the Vite plugin in vite.config.ts emits.
 declare module 'virtual:graph-files' {
   export const graphFileSources: Record<string, string>
   export const graphRootName: string

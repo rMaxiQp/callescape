@@ -7,11 +7,11 @@
     "node": "^22.18.0 || >=24.0.0"
   },
   "bin": {
-    "callscape": "bin/callscape.mjs",
-    "callescape": "bin/callscape.mjs"
+    "callscape": "bin/callscape.mts",
+    "callescape": "bin/callscape.mts"
   },
   "scripts": {
-    "app": "node bin/callscape.mjs",
+    "app": "node bin/callscape.mts",
     "dev": "vite",
     "build": "vite build",
     "start": "vite preview",
@@ -28,6 +28,7 @@
     "vite": "^7.0.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "typescript": "^7.0.2",

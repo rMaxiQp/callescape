@@ -26,8 +26,42 @@ def python_paths(root, revision):
         raw = git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
     else:
         raw = git(root, "ls-tree", "-r", "-z", "--name-only", revision)
-    return sorted({path.decode("utf-8", errors="surrogateescape") for path in raw.split(b"\0")
-                   if path.endswith(b".py")})
+    return {path.decode("utf-8", errors="surrogateescape") for path in raw.split(b"\0")
+            if path.endswith(b".py")}
+
+
+def changed_python_paths(root, base, head):
+    arguments = ["diff", "--name-only", "-z", "--no-renames", base]
+    if head != "worktree":
+        arguments.append(head)
+    raw = git(root, *arguments, "--", "*.py")
+    changed = {path.decode("utf-8", errors="surrogateescape") for path in raw.split(b"\0") if path}
+    if head == "worktree":
+        untracked = git(root, "ls-files", "-z", "--others", "--exclude-standard", "--", "*.py")
+        changed.update(path.decode("utf-8", errors="surrogateescape")
+                       for path in untracked.split(b"\0") if path)
+    return changed
+
+
+def files_mentioning(root, revision, names):
+    if not names:
+        return set()
+    arguments = ["grep", "-l", "-z", "-F"]
+    if revision == "worktree":
+        arguments.append("--untracked")
+    for name in sorted(names):
+        arguments.extend(("-e", name))
+    if revision != "worktree":
+        arguments.append(revision)
+    arguments.extend(("--", "*.py"))
+    result = subprocess.run(["git", "-C", str(root), *arguments], capture_output=True, check=False)
+    if result.returncode == 1:
+        return set()
+    if result.returncode:
+        raise ValueError(result.stderr.decode("utf-8", errors="replace").strip() or "git grep failed")
+    prefix = f"{revision}:" if revision != "worktree" else ""
+    return {path.decode("utf-8", errors="surrogateescape").removeprefix(prefix)
+            for path in result.stdout.split(b"\0") if path}
 
 
 def read_source(root, revision, relative_path):
@@ -64,6 +98,7 @@ class DefinitionVisitor(ast.NodeVisitor):
     def __init__(self, path, source, module):
         self.path = path
         self.source = source
+        self.lines = source.splitlines()
         self.module = module
         self.scope = []
         self.functions = {}
@@ -83,9 +118,8 @@ class DefinitionVisitor(ast.NodeVisitor):
     def add_function(self, node):
         qualname = ".".join([name for name, _ in self.scope] + [node.name])
         identifier = f"{self.path}:{qualname}"
-        lines = self.source.splitlines()
         start = min([node.lineno] + [item.lineno for item in node.decorator_list])
-        snippet = "\n".join(lines[start - 1:node.end_lineno]).rstrip()
+        snippet = "\n".join(self.lines[start - 1:node.end_lineno]).rstrip()
         collector = CallVisitor()
         for child in node.body:
             collector.visit(child)
@@ -184,43 +218,82 @@ def resolve_call(func, expression, indexes, imports):
     if not alias:
         return None
     name = ".".join([alias] + parts[1:])
-    for module in sorted(indexes["by_module"], key=len, reverse=True):
-        definitions = indexes["by_module"][module]
-        if name.startswith(module + "."):
-            target = definitions.get(name[len(module) + 1:])
-            if target:
-                return target
+    parts = name.split(".")
+    for split in range(len(parts) - 1, 0, -1):
+        module = ".".join(parts[:split])
+        definitions = indexes["by_module"].get(module, {})
+        target = definitions.get(".".join(parts[split:]))
+        if target:
+            return target
     return None
 
 
-def analyze(root, revision):
-    functions = {}
-    imports = {}
-    for path in python_paths(root, revision):
-        try:
-            source = read_source(root, revision, path)
-            if source is None:
+class Snapshot:
+    def __init__(self, root, revision):
+        self.root = root
+        self.revision = revision
+        self.paths = python_paths(root, revision)
+        self.module_paths = {}
+        for path in self.paths:
+            self.module_paths.setdefault(module_name(path), set()).add(path)
+        self.loaded = set()
+        self.functions = {}
+        self.imports = {}
+
+    def load(self, paths, strict=False):
+        for path in sorted((paths & self.paths) - self.loaded):
+            self.loaded.add(path)
+            try:
+                source = read_source(self.root, self.revision, path)
+                if source is None:
+                    continue
+                tree = ast.parse(source, filename=path)
+            except (SyntaxError, UnicodeError, OSError) as error:
+                if strict:
+                    raise ValueError(f"Cannot parse {path} at {self.revision}: {error}") from error
+                print(f"Skipping dependency {path} at {self.revision}: {error}", file=sys.stderr)
                 continue
-            tree = ast.parse(source, filename=path)
-        except (SyntaxError, UnicodeError, OSError) as error:
-            raise ValueError(f"Cannot parse {path} at {revision}: {error}") from error
-        module = module_name(path)
-        if module in imports:
-            print(f"Skipping ambiguous module {module} in {path}", file=sys.stderr)
-            continue
-        imports[module] = imports_for(tree, module, path.endswith("/__init__.py"))
-        visitor = DefinitionVisitor(path, source, module)
-        visitor.visit(tree)
-        functions.update(visitor.functions)
-    by_module = {}
-    for func in functions.values():
-        by_module.setdefault(func.module, {})[func.qualname] = func.id
-    indexes = {"by_module": by_module}
-    edges = {}
-    for func in functions.values():
-        edges[func.id] = [target for expression in func.calls
-                          if (target := resolve_call(func, expression, indexes, imports))]
-    return functions, edges
+            module = module_name(path)
+            if module in self.imports:
+                print(f"Skipping ambiguous module {module} in {path}", file=sys.stderr)
+                continue
+            self.imports[module] = imports_for(tree, module, path.endswith("/__init__.py"))
+            visitor = DefinitionVisitor(path, source, module)
+            visitor.visit(tree)
+            self.functions.update(visitor.functions)
+
+    def outgoing_dependency_paths(self, identifiers):
+        paths = set()
+        for identifier in identifiers:
+            func = self.functions.get(identifier)
+            if not func:
+                continue
+            aliases = self.imports.get(func.module, {})
+            for expression in func.calls:
+                name = dotted_name(expression)
+                if not name:
+                    continue
+                parts = name.split(".")
+                alias = aliases.get(parts[0])
+                if not alias:
+                    continue
+                target = ".".join([alias] + parts[1:])
+                target_parts = target.split(".")
+                for split in range(1, len(target_parts)):
+                    module = ".".join(target_parts[:split])
+                    paths.update(self.module_paths.get(module, ()))
+        return paths
+
+    def edges(self):
+        by_module = {}
+        for func in self.functions.values():
+            by_module.setdefault(func.module, {})[func.qualname] = func.id
+        indexes = {"by_module": by_module}
+        return {
+            func.id: [target for expression in func.calls
+                      if (target := resolve_call(func, expression, indexes, self.imports))]
+            for func in self.functions.values()
+        }
 
 
 def merge_calls(before, after):
@@ -236,23 +309,52 @@ def merge_calls(before, after):
 
 
 def generate(root, base, head):
-    before, before_edges = analyze(root, base)
-    after, after_edges = analyze(root, head)
-    all_ids = set(before) | set(after)
-    changed = {identifier for identifier in all_ids
-               if identifier not in before or identifier not in after
-               or before[identifier].source != after[identifier].source}
+    changed_paths = changed_python_paths(root, base, head)
+    if not changed_paths:
+        return {"title": f"Python changes: {base} → {head}", "functions": [], "calls": []}
+
+    print(f"Reviewing {len(changed_paths)} changed Python file(s)", file=sys.stderr)
+    before_snapshot = Snapshot(root, base)
+    after_snapshot = Snapshot(root, head)
+    before_snapshot.load(changed_paths, strict=True)
+    after_snapshot.load(changed_paths, strict=True)
+    before = before_snapshot.functions
+    after = after_snapshot.functions
+    changed_ids = {identifier for identifier in set(before) | set(after)
+                   if identifier not in before or identifier not in after
+                   or before[identifier].source != after[identifier].source}
+    for path in changed_paths:
+        module = module_name(path)
+        if before_snapshot.imports.get(module) != after_snapshot.imports.get(module):
+            changed_ids.update(func.id for func in list(before.values()) + list(after.values())
+                               if func.file == path)
+
+    if not changed_ids:
+        return {"title": f"Python changes: {base} → {head}", "functions": [], "calls": []}
+
+    names = {identifier.rsplit(":", 1)[-1].rsplit(".", 1)[-1] for identifier in changed_ids}
+    for snapshot in (before_snapshot, after_snapshot):
+        candidates = snapshot.outgoing_dependency_paths(changed_ids)
+        candidates.update(files_mentioning(root, snapshot.revision, names))
+        print(f"Checking {len(candidates - snapshot.loaded)} related file(s) at {snapshot.revision}",
+              file=sys.stderr)
+        snapshot.load(candidates)
+
+    before_edges = before_snapshot.edges()
+    after_edges = after_snapshot.edges()
+    selected = set(changed_ids)
+    caller_ids = set(changed_ids)
+    for edge_map in (before_edges, after_edges):
+        for caller, targets in edge_map.items():
+            if caller in changed_ids:
+                selected.update(targets)
+            if changed_ids.intersection(targets):
+                selected.add(caller)
+                caller_ids.add(caller)
     merged_edges = {}
-    for identifier in all_ids:
+    for identifier in caller_ids:
         merged_edges[identifier] = merge_calls(before_edges.get(identifier, []),
                                                after_edges.get(identifier, []))
-        if any(label for _, label in merged_edges[identifier]):
-            changed.add(identifier)
-    selected = set(changed)
-    for caller, calls in merged_edges.items():
-        for callee, _ in calls:
-            if caller in changed or callee in changed:
-                selected.update((caller, callee))
     functions = []
     for identifier in sorted(selected):
         old = before.get(identifier)
@@ -263,8 +365,8 @@ def generate(root, base, head):
                           "after": new.source if new else ""})
     calls = []
     for caller in sorted(selected):
-        for callee, label in merged_edges[caller]:
-            if callee in selected and (caller in changed or callee in changed):
+        for callee, label in merged_edges.get(caller, []):
+            if callee in selected and (caller in changed_ids or callee in changed_ids):
                 calls.append({"from": caller, "to": callee, "label": label})
     return {"title": f"Python changes: {base} → {head}", "functions": functions,
             "calls": calls}

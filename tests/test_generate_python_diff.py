@@ -86,6 +86,82 @@ class PythonDiffTests(unittest.TestCase):
                 [("service.py:Service.run", "service.py:Service.helper")],
             )
 
+    def test_only_changed_function_and_direct_dependencies_are_parsed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            (root / "pkg").mkdir()
+            (root / "pkg/core.py").write_text(
+                "from pkg.deps import helper\n\ndef changed():\n    return helper(1)\n",
+                encoding="utf-8",
+            )
+            (root / "pkg/deps.py").write_text("def helper(value):\n    return value\n", encoding="utf-8")
+            (root / "app.py").write_text(
+                "from pkg.core import changed as run_change\n\ndef entry():\n    return run_change()\n",
+                encoding="utf-8",
+            )
+            # An unrelated file may not even parse; it must not block this review.
+            (root / "unrelated.py").write_text("def broken(\n", encoding="utf-8")
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "pkg/core.py").write_text(
+                "from pkg.deps import helper\n\ndef changed():\n    return helper(2)\n",
+                encoding="utf-8",
+            )
+            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"pkg/core.py:changed", "pkg/deps.py:helper", "app.py:entry"},
+            )
+            self.assertEqual(
+                {(item["from"], item["to"]) for item in graph["calls"]},
+                {("pkg/core.py:changed", "pkg/deps.py:helper"),
+                 ("app.py:entry", "pkg/core.py:changed")},
+            )
+
+    def test_import_only_change_updates_call_edges(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            for name in ("old", "new"):
+                (root / f"{name}.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
+            (root / "main.py").write_text(
+                "from old import helper\n\ndef run():\n    return helper()\n", encoding="utf-8"
+            )
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "main.py").write_text(
+                "from new import helper\n\ndef run():\n    return helper()\n", encoding="utf-8"
+            )
+            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                [(item["to"], item["label"]) for item in graph["calls"]],
+                [("old.py:helper", "before"), ("new.py:helper", "after")],
+            )
+
+    def test_untracked_python_file_is_a_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            (root / "existing.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
+            run("git", "add", "existing.py", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "new.py").write_text(
+                "from existing import helper\n\ndef added():\n    return helper()\n",
+                encoding="utf-8",
+            )
+            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"new.py:added", "existing.py:helper"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

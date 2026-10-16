@@ -60,7 +60,7 @@ async function discover(graphRoot, directory = graphRoot, relativeDirectory = ''
   return files
 }
 
-function graphFilesPlugin(graphRoot, reviewGraph, reviewMode, analyzeReviewMode) {
+function graphFilesPlugin(graphRoot, reviewGraph, reviewMode, reviewFilters, analyzeReviewMode) {
   return {
     name: 'callscape-graph-files',
     resolveId(id) {
@@ -83,6 +83,7 @@ function graphFilesPlugin(graphRoot, reviewGraph, reviewMode, analyzeReviewMode)
         `export const graphRootPath = ${JSON.stringify(graphRoot)};`,
         `export const graphReadOnly = ${Boolean(reviewGraph)};`,
         `export const initialReviewMode = ${JSON.stringify(reviewMode || null)};`,
+        `export const initialReviewFilters = ${JSON.stringify(reviewFilters || { include: '', exclude: '' })};`,
       ].join('\n')
     },
     configureServer(server) {
@@ -96,17 +97,22 @@ function graphFilesPlugin(graphRoot, reviewGraph, reviewMode, analyzeReviewMode)
             let body = ''
             for await (const chunk of request) {
               body += chunk
-              if (body.length > 1024) {
+              if (body.length > 4096) {
                 response.writeHead(413).end('Review request is too large')
                 return
               }
             }
-            const mode = JSON.parse(body).mode
-            if (!['uncommitted', 'last-commit', 'against-main'].includes(mode)) {
+            const payload = JSON.parse(body)
+            const { mode, include = '', exclude = '' } = payload
+            if (!['uncommitted', 'last-commit', 'against-main'].includes(mode) && !(mode === 'custom' && reviewMode === 'custom')) {
               response.writeHead(400).end('Unknown review comparison')
               return
             }
-            const graph = await analyzeReviewMode(mode)
+            if (typeof include !== 'string' || typeof exclude !== 'string' || include.length > 1024 || exclude.length > 1024) {
+              response.writeHead(400).end('Invalid review file filters')
+              return
+            }
+            const graph = await analyzeReviewMode(mode, { include, exclude })
             response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
               .end(JSON.stringify(graph))
           } catch (error) {
@@ -168,10 +174,11 @@ export function createCallscapeConfig({
   graphRoot = process.env.CALLSCAPE_GRAPH_ROOT || process.cwd(),
   reviewGraph = null,
   reviewMode = null,
+  reviewFilters = null,
   analyzeReviewMode = null,
 } = {}) {
   const resolvedRoot = path.resolve(graphRoot)
-  return { plugins: [react(), graphFilesPlugin(resolvedRoot, reviewGraph, reviewMode, analyzeReviewMode)] }
+  return { plugins: [react(), graphFilesPlugin(resolvedRoot, reviewGraph, reviewMode, reviewFilters, analyzeReviewMode)] }
 }
 
 export default defineConfig(createCallscapeConfig())

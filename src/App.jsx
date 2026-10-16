@@ -22,7 +22,7 @@ import {
   PanelLeftOpen,
   Trash2,
 } from 'lucide-react'
-import { graphFileSources, graphReadOnly, graphRootName, graphRootPath, initialReviewMode } from 'virtual:graph-files'
+import { graphFileSources, graphReadOnly, graphRootName, graphRootPath, initialReviewFilters, initialReviewMode } from 'virtual:graph-files'
 import { diffPseudocode, firstValidGraph, parseGraph } from './graph.js'
 import { layoutGraph } from './layout.js'
 
@@ -214,6 +214,9 @@ export default function App() {
   const [deleting, setDeleting] = useState(false)
   const [reviewMode, setReviewMode] = useState(initialReviewMode)
   const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewRevision, setReviewRevision] = useState(0)
+  const [includeFiles, setIncludeFiles] = useState(initialReviewFilters.include)
+  const [excludeFiles, setExcludeFiles] = useState(initialReviewFilters.exclude)
   const paths = Object.keys(graphFileSources).sort()
   const absolutePath = graphReadOnly
     ? `${graphRootPath} · in-memory review`
@@ -251,18 +254,19 @@ export default function App() {
   }
 
   async function changeReviewMode(mode) {
-    if (!graphReadOnly || mode === reviewMode || reviewLoading) return
+    if (!graphReadOnly || reviewLoading) return
     setReviewLoading(true)
     setError(null)
     try {
       const response = await fetch('/__callscape/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, include: includeFiles, exclude: excludeFiles }),
       })
       if (!response.ok) throw new Error(await response.text() || `Review failed (${response.status})`)
       setGraph(parseGraph(await response.text()))
       setReviewMode(mode)
+      setReviewRevision((revision) => revision + 1)
     } catch (cause) {
       setError(`Could not update review: ${cause.message}`)
     } finally {
@@ -300,11 +304,19 @@ export default function App() {
           <div className="review-selector">
             <label htmlFor="review-mode">Compare</label>
             <select id="review-mode" value={reviewMode} disabled={reviewLoading} onChange={(event) => changeReviewMode(event.target.value)}>
-              {reviewMode === 'custom' && <option value="custom">Custom comparison</option>}
+              {initialReviewMode === 'custom' && <option value="custom">Custom comparison</option>}
               <option value="uncommitted">Uncommitted changes</option>
               <option value="last-commit">Last commit</option>
               <option value="against-main">Changes against main</option>
             </select>
+            <form className="review-file-filters" onSubmit={(event) => { event.preventDefault(); changeReviewMode(reviewMode) }}>
+              <label htmlFor="review-include">Include</label>
+              <input id="review-include" type="text" value={includeFiles} onChange={(event) => setIncludeFiles(event.target.value)} placeholder="src/**/*.py" disabled={reviewLoading} />
+              <label htmlFor="review-exclude">Exclude</label>
+              <input id="review-exclude" type="text" value={excludeFiles} onChange={(event) => setExcludeFiles(event.target.value)} placeholder="**/test_*.py" disabled={reviewLoading} />
+              <span className="filter-hint">Comma-separated globs · blank includes all files</span>
+              <button type="submit" disabled={reviewLoading}>Apply filters</button>
+            </form>
             {reviewLoading && <span role="status">Analyzing…</span>}
           </div>
         )}
@@ -345,7 +357,7 @@ export default function App() {
         )}
         {graphReadOnly && graph?.functions.length === 0 ? (
           <div className="empty-state">No changed Python functions in this comparison.</div>
-        ) : graph ? <GraphCanvas key={`${activePath}-${direction}-${reviewMode}`} graph={graph} direction={direction} /> : (
+        ) : graph ? <GraphCanvas key={`${activePath}-${direction}-${reviewMode}-${reviewRevision}`} graph={graph} direction={direction} /> : (
           <div className="empty-state">No valid graph JSON files in {graphRootName}.</div>
         )}
       </section>

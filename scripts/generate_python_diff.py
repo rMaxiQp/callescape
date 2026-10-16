@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -30,7 +31,33 @@ def python_paths(root, revision):
             if path.endswith(b".py")}
 
 
-def changed_python_paths(root, base, head):
+def path_glob(pattern):
+    """Compile a small, repository-relative glob (*, ?, and ** path segments)."""
+    if pattern.endswith("/"):
+        pattern += "**"
+    parts = pattern.split("/")
+    expression = ""
+    for index, part in enumerate(parts):
+        if part == "**":
+            expression += ".*" if index == len(parts) - 1 else "(?:[^/]+/)*"
+            continue
+        for char in part:
+            expression += "[^/]*" if char == "*" else "[^/]" if char == "?" else re.escape(char)
+        if index < len(parts) - 1:
+            expression += "/"
+    if "/" not in pattern:
+        expression = "(?:.*/)?" + expression
+    return re.compile(f"^{expression}$")
+
+
+def glob_patterns(value):
+    patterns = [part.strip() for part in value.split(",") if part.strip()]
+    if len(patterns) > 32 or any(len(pattern) > 256 for pattern in patterns):
+        raise ValueError("Too many or overly long file patterns")
+    return [path_glob(pattern) for pattern in patterns]
+
+
+def changed_python_paths(root, base, head, include="", exclude=""):
     arguments = ["diff", "--name-only", "-z", "--no-renames", base]
     if head != "worktree":
         arguments.append(head)
@@ -40,6 +67,11 @@ def changed_python_paths(root, base, head):
         untracked = git(root, "ls-files", "-z", "--others", "--exclude-standard", "--", "*.py")
         changed.update(path.decode("utf-8", errors="surrogateescape")
                        for path in untracked.split(b"\0") if path)
+    included = glob_patterns(include)
+    excluded = glob_patterns(exclude)
+    changed = {path for path in changed
+               if (not included or any(pattern.fullmatch(path) for pattern in included))
+               and not any(pattern.fullmatch(path) for pattern in excluded)}
     return changed
 
 
@@ -262,8 +294,8 @@ def merge_calls(before, after):
     return merged
 
 
-def generate(root, base, head):
-    changed_paths = changed_python_paths(root, base, head)
+def generate(root, base, head, include="", exclude=""):
+    changed_paths = changed_python_paths(root, base, head, include, exclude)
     if not changed_paths:
         return {"title": f"Python changes: {base} → {head}", "functions": [], "calls": []}
 
@@ -305,13 +337,15 @@ def main():
     parser.add_argument("repo", nargs="?", default=".", help="Git repository (default: current directory)")
     parser.add_argument("--base", default="HEAD", help="Base Git revision (default: HEAD)")
     parser.add_argument("--head", default="worktree", help="Head Git revision or worktree")
+    parser.add_argument("--include", default="", help="Comma-separated changed-file globs to include")
+    parser.add_argument("--exclude", default="", help="Comma-separated changed-file globs to exclude")
     args = parser.parse_args()
     if sys.version_info < (3, 9):
         parser.exit(1, "callescape review: Python 3.9 or newer is required\n")
     try:
         root = Path(git(Path(args.repo).resolve(), "rev-parse", "--show-toplevel")
                     .decode().rstrip("\n")).resolve()
-        graph = generate(root, args.base, args.head)
+        graph = generate(root, args.base, args.head, args.include, args.exclude)
         print(json.dumps({"repository": str(root), "graph": graph}, ensure_ascii=False))
     except (ValueError, OSError) as error:
         parser.exit(1, f"callescape review: {error}\n")

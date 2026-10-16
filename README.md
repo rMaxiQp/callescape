@@ -42,7 +42,9 @@ This compares the current working tree with `HEAD` and opens the graph in your b
 callescape review --base HEAD~1 --head HEAD
 ```
 
-In review mode, use the comparison dropdown at the top left to switch between uncommitted changes (`HEAD` versus the working tree), the last commit (`HEAD~1` versus `HEAD`), and changes against main (the merge base of `HEAD` and local `main`, or `origin/main`, versus the working tree). A comparison passed with `--base` or `--head` initially appears as “Custom comparison.” Switching choices recomputes the graph in memory without restarting the app. The last-commit choice requires a parent commit; the main choice requires a `main` or `origin/main` ref.
+In review mode, use the comparison dropdown at the top left to switch between uncommitted changes (`HEAD` versus the working tree), the last commit (`HEAD~1` versus `HEAD`), and changes against main (the merge base of `HEAD` and local `main`, or `origin/main`, versus the working tree). A comparison passed with `--base`, `--head`, or CLI file filters initially appears as “Custom comparison.” Switching choices recomputes the graph in memory without restarting the app. The last-commit choice requires a parent commit; the main choice requires a `main` or `origin/main` ref.
+
+The sidebar always shows **Include** and **Exclude** file filters in review mode. Enter comma-separated repository-relative globs, then choose **Apply filters** to rerun the selected comparison. The same patterns carry across comparison choices. For example, Include `src/**/*.py` and Exclude `**/test_*.py`. Blank Include matches all changed Python files; Exclude wins over Include. `*` and `?` match within one folder, `**` matches across folders, a bare filename matches at any depth, and a trailing `/` includes a folder's contents. Filters run before Python parsing, so excluded files are not analyzed. The same patterns can be passed to the command as `--include GLOBS --exclude GLOBS`.
 
 You can also pass the repository path, so you don't have to change directories:
 

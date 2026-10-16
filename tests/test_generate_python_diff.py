@@ -271,6 +271,47 @@ class PythonDiffTests(unittest.TestCase):
                 [("caller.py:run", "target.py:task", "")],
             )
 
+    def test_last_commit_file_globs_filter_before_parsing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            for folder in ("src", "src/sub", "tests"):
+                (root / folder).mkdir()
+            files = ("root.py", "src/core.py", "src/sub/helper.py", "tests/test_core.py")
+            for name in files:
+                (root / name).write_text("def value():\n    return 1\n", encoding="utf-8")
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            for name in files:
+                (root / name).write_text("def value():\n    return 2\n", encoding="utf-8")
+            (root / "tests/test_core.py").write_text("def broken(\n", encoding="utf-8")
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "after", cwd=root)
+
+            graph = json.loads(run(
+                sys.executable, str(SCRIPT), "--base", "HEAD~1", "--head", "HEAD",
+                "--include", "src/**/*.py, root.py", "--exclude", "src/sub/**, **/test_*.py",
+                cwd=root,
+            ).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"root.py:value", "src/core.py:value"},
+            )
+
+            direct = json.loads(run(
+                sys.executable, str(SCRIPT), "--base", "HEAD~1", "--head", "HEAD",
+                "--include", "src/*.py", cwd=root,
+            ).stdout)["graph"]
+            self.assertEqual([item["id"] for item in direct["functions"]], ["src/core.py:value"])
+
+            bare = json.loads(run(
+                sys.executable, str(SCRIPT), "--base", "HEAD~1", "--head", "HEAD",
+                "--include", "helper.py", cwd=root,
+            ).stdout)["graph"]
+            self.assertEqual([item["id"] for item in bare["functions"]], ["src/sub/helper.py:value"])
+
 
 if __name__ == "__main__":
     unittest.main()

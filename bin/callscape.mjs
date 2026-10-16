@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const usage = `Usage: callscape [folder]
-       callescape review [repo] [--base REV] [--head REV|worktree]
+       callescape review [repo] [--base REV] [--head REV|worktree] [--include GLOBS] [--exclude GLOBS]
 
 Start Callscape for graph JSON files, or review a Python Git diff in memory.
 Review compares HEAD with the working tree by default and requires Python 3.9+.`
@@ -57,17 +57,29 @@ async function review(arguments_) {
     return
   }
   const initial = await analyze(arguments_)
-  const initialMode = arguments_.some((argument) => ['--base', '--head'].includes(argument) || argument.startsWith('--base=') || argument.startsWith('--head=')) ? 'custom' : 'uncommitted'
-  const analyzeMode = async (mode) => {
-    if (mode === 'uncommitted') return (await analyze([initial.repository])).graph
-    if (mode === 'last-commit') return (await analyze([initial.repository, '--base', 'HEAD~1', '--head', 'HEAD'])).graph
+  const initialMode = arguments_.some((argument) =>
+    ['--base', '--head', '--include', '--exclude'].includes(argument) ||
+    ['--base=', '--head=', '--include=', '--exclude='].some((option) => argument.startsWith(option))
+  ) ? 'custom' : 'uncommitted'
+  const initialFilters = { include: '', exclude: '' }
+  for (const [index, argument] of arguments_.entries()) {
+    for (const name of ['include', 'exclude']) {
+      if (argument === `--${name}`) initialFilters[name] = arguments_[index + 1] || ''
+      if (argument.startsWith(`--${name}=`)) initialFilters[name] = argument.slice(name.length + 3)
+    }
+  }
+  const analyzeMode = async (mode, { include = '', exclude = '' } = {}) => {
+    const filters = ['--include', include, '--exclude', exclude]
+    if (mode === 'custom' && initialMode === 'custom') return (await analyze([...arguments_, ...filters])).graph
+    if (mode === 'uncommitted') return (await analyze([initial.repository, ...filters])).graph
+    if (mode === 'last-commit') return (await analyze([initial.repository, '--base', 'HEAD~1', '--head', 'HEAD', '--include', include, '--exclude', exclude])).graph
     if (mode === 'against-main') {
       const base = await mainBase(initial.repository)
-      return (await analyze([initial.repository, '--base', base])).graph
+      return (await analyze([initial.repository, '--base', base, ...filters])).graph
     }
     throw new Error('Unknown review comparison')
   }
-  await startServer(initial.repository, { graph: initial.graph, initialMode, analyzeMode })
+  await startServer(initial.repository, { graph: initial.graph, initialMode, initialFilters, analyzeMode })
 }
 
 async function startServer(graphRoot, review = null) {
@@ -77,7 +89,7 @@ async function startServer(graphRoot, review = null) {
   const server = await createServer({
     root: appRoot,
     configFile: false,
-    ...createCallscapeConfig({ graphRoot, reviewGraph: review?.graph, reviewMode: review?.initialMode, analyzeReviewMode: review?.analyzeMode }),
+    ...createCallscapeConfig({ graphRoot, reviewGraph: review?.graph, reviewMode: review?.initialMode, reviewFilters: review?.initialFilters, analyzeReviewMode: review?.analyzeMode }),
     server: { open: true },
   })
   await server.listen()

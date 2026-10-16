@@ -11,4 +11,4 @@ Write code-shaped, language-neutral pseudocode in execution order. Keep unchange
 
 Order each caller's `calls` entries by execution. That order determines both edge numbers and sibling placement in the graph. Use `before` and `after` labels when a call exists on only one side. Do not put sequence numbers in labels; Callscape derives those from array order.
 
-Read [the JSON contract](references/json-format.md) before saving or changing a graph. Validate the output as JSON and, when the project is available, with Callscape's parser. Unless the user chooses a different destination, save under `~/src/Planning/code-visualization`. Return an absolute link to the saved graph.
+Read [the JSON contract](references/json-format.md) before saving or changing a graph. Validate the output as JSON and, when the project is available, with Callscape's parser. If the CLI is unavailable, the repository's `install.sh` installs it from a local checkout or published Git repository. Unless the user chooses a different destination, save under `~/src/Planning/code-visualization`. Return an absolute link to the saved graph.

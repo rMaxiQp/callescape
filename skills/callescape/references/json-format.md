@@ -45,6 +45,6 @@ For each separate call tree, start the root function's populated sides with the 
 
 ## Files and workflow
 
-Save a UTF-8 `.json` file beneath the chosen graph folder. Callscape recursively discovers JSON files except hidden paths, `node_modules`, `dist`, and root package manifests. The primary command is `callscape [folder]`; it opens the browser and reloads when files change. Its in-app delete action removes only a selected JSON file after confirmation. A static `npm run build` embeds the current files as a snapshot and cannot provide the live delete endpoint.
+Save a UTF-8 `.json` file beneath the chosen graph folder. Callscape recursively discovers JSON files except hidden paths, `node_modules`, `dist`, and root package manifests. The primary command is `callscape [folder]`; it opens the browser and reloads when files change. If the command is unavailable, run `bash install.sh` from a local checkout or use the published-repository form documented in `README.md`. Its in-app delete action removes only a selected JSON file after confirmation. A static `npm run build` embeds the current files as a snapshot and cannot provide the live delete endpoint.
 
 Unless the user requests another location, use `~/src/Planning/code-visualization` for generated graphs and return an absolute file link.

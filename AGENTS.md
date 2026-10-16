@@ -2,6 +2,7 @@
 
 - Work through the remaining files in `tasks/` in numerical order. When a task is complete, remove its task file and row from `tasks/README.md` in that task's commit.
 - Keep `callscape [folder]` as the primary runtime. It starts Vite programmatically so arbitrary-folder discovery, watching, and guarded deletion work.
+- Keep Vite and `@vitejs/plugin-react` in runtime dependencies: `install.sh` uses `npm ci --omit=dev`. Keep the installer usable from both a local checkout and a published Git repository.
 - Treat `virtual:graph-files` in `vite.config.js` as the filesystem boundary. Browser code consumes its snapshot; it must not scan arbitrary local folders itself.
 - Keep graph parsing and exact-line diffing in `src/graph.js`, Dagre sizing/layout in `src/layout.js`, and UI behavior in `src/App.jsx` and `src/styles.css` unless a split materially improves maintenance.
 - Preserve the delete endpoint's root containment and path-segment checks and the UI confirmation dialog.

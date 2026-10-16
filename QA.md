@@ -27,3 +27,10 @@ Computer use was denied access to Google Chrome in this session, so these visual
 - Delete confirmation, Cancel behavior, and disabled buttons while deleting.
 
 Run `npm run app -- /path/to/graph-folder` in a browser-enabled session to complete these checks.
+
+## Installer check
+
+- Moved Vite and the React plugin into runtime dependencies, then refreshed the lockfile.
+- Installed twice with `bash install.sh --source /Users/yijie/src/callescape --prefix /private/tmp/callscape-install-test.McOX6T`. Both installs completed with `npm ci --omit=dev`, and the installed `callscape --help` command worked.
+- Started the installed command from `/private/tmp` against the project graph folder. It served the app with HTTP 200 and exposed the selected graph root through the virtual module.
+- A public `--repo` download has not been tested because this checkout has no published Git remote.

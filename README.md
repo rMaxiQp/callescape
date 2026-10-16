@@ -7,12 +7,25 @@ Callscape explains code changes as an interactive function call graph. Each func
 - Node.js 20.19+ or 22.12+ (`.nvmrc` selects Node 22)
 - npm
 
+From a local checkout, run:
+
 ```bash
-npm install
-npm link
+bash install.sh
 ```
 
-`npm link` makes the `callscape` command available on your `PATH`. To avoid a global link, use `npm run app -- /path/to/graphs` from this repository.
+The installer copies the app into `~/.local/share/callescape`, installs its runtime dependencies, and links `~/.local/bin/callscape`. It will not overwrite an unrelated command at that path. If needed, add `~/.local/bin` to your `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Once this repository is public, users can download the installer in one command. Replace `OWNER/REPO` with its published GitHub location:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | bash -s -- --repo https://github.com/OWNER/REPO.git
+```
+
+The installer can also take `--ref` to pin a branch or release tag and `--prefix` to choose another user-owned installation directory. There is no public download URL yet. For development without installing, use `npm install` followed by `npm run app -- /path/to/graphs` from this checkout.
 
 ## Open a graph folder
 
@@ -74,4 +87,4 @@ npm start
 
 `npm run dev` uses this repository as the graph folder unless `CALLSCAPE_GRAPH_ROOT` is set. `npm run build` embeds a snapshot of the discovered graph files into `dist/`. Static preview from `npm start` does not provide live filesystem refresh or the delete endpoint. Use `callscape` for the full workflow.
 
-The repository keeps generated `dist/` and `node_modules/` out of Git. There is no lint script or automated test suite.
+The repository keeps generated `dist/` and `node_modules/` out of Git. Vite and its React plugin are runtime dependencies because the `callscape` command starts Vite. There is no lint script or automated test suite.

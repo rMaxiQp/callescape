@@ -343,7 +343,9 @@ export default function App() {
             {error} <button onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
-        {graph ? <GraphCanvas key={`${activePath}-${direction}-${reviewMode}`} graph={graph} direction={direction} /> : (
+        {graphReadOnly && graph?.functions.length === 0 ? (
+          <div className="empty-state">No changed Python functions in this comparison.</div>
+        ) : graph ? <GraphCanvas key={`${activePath}-${direction}-${reviewMode}`} graph={graph} direction={direction} /> : (
           <div className="empty-state">No valid graph JSON files in {graphRootName}.</div>
         )}
       </section>

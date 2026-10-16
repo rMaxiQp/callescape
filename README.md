@@ -50,7 +50,7 @@ You can also pass the repository path, so you don't have to change directories:
 callescape review /path/to/python-project
 ```
 
-Review reads Python source but never runs it. It starts with changed Python files, then narrows direct-caller candidates by imports and call names and loads directly imported callees. It does not parse every Python file in the repository. It shows changed functions and those direct dependencies using the actual source on both sides. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Switch comparisons or restart the command to pick up newer edits.
+Review reads Python source but never runs it. It parses only changed Python files and shows functions whose source was modified, added, or removed. Calls are drawn only when both functions are shown; unchanged callers and callees are omitted. Import-only edits that leave function source identical do not produce function nodes. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Switch comparisons or restart the command to pick up newer edits.
 
 Nothing is saved to the repository: the review graph stays in memory, and the delete button is disabled in review mode.
 

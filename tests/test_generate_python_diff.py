@@ -36,15 +36,13 @@ class PythonDiffTests(unittest.TestCase):
             )
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
             functions = {item["id"]: item for item in graph["functions"]}
-            self.assertEqual(set(functions), {"a.py:outer", "a.py:old", "a.py:new", "b.py:entry"})
-            self.assertEqual(functions["b.py:entry"]["before"], functions["b.py:entry"]["after"])
+            self.assertEqual(set(functions), {"a.py:outer", "a.py:old", "a.py:new"})
             self.assertEqual(functions["a.py:old"]["after"], "")
             self.assertEqual(functions["a.py:new"]["before"], "")
             self.assertEqual(
                 [(item["from"], item["to"], item["label"]) for item in graph["calls"]],
                 [("a.py:outer", "a.py:old", "before"),
-                 ("a.py:outer", "a.py:new", "after"),
-                 ("b.py:entry", "a.py:outer", "")],
+                 ("a.py:outer", "a.py:new", "after")],
             )
             run("git", "add", "a.py", cwd=root)
             run("git", "commit", "-qm", "after", cwd=root)
@@ -81,12 +79,10 @@ class PythonDiffTests(unittest.TestCase):
             run("git", "commit", "-qm", "before", cwd=root)
             (root / "service.py").write_text(before.replace("return 1", "return 2"), encoding="utf-8")
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
-            self.assertEqual(
-                [(item["from"], item["to"]) for item in graph["calls"]],
-                [("service.py:Service.run", "service.py:Service.helper")],
-            )
+            self.assertEqual([item["id"] for item in graph["functions"]], ["service.py:Service.helper"])
+            self.assertEqual(graph["calls"], [])
 
-    def test_only_changed_function_and_direct_dependencies_are_parsed(self):
+    def test_only_changed_function_files_are_parsed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run("git", "init", "-q", cwd=root)
@@ -110,18 +106,13 @@ class PythonDiffTests(unittest.TestCase):
                 "from pkg.deps import helper\n\ndef changed():\n    return helper(2)\n",
                 encoding="utf-8",
             )
-            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
-            self.assertEqual(
-                {item["id"] for item in graph["functions"]},
-                {"pkg/core.py:changed", "pkg/deps.py:helper", "app.py:entry"},
-            )
-            self.assertEqual(
-                {(item["from"], item["to"]) for item in graph["calls"]},
-                {("pkg/core.py:changed", "pkg/deps.py:helper"),
-                 ("app.py:entry", "pkg/core.py:changed")},
-            )
+            result = run(sys.executable, str(SCRIPT), cwd=root)
+            graph = json.loads(result.stdout)["graph"]
+            self.assertEqual([item["id"] for item in graph["functions"]], ["pkg/core.py:changed"])
+            self.assertEqual(graph["calls"], [])
+            self.assertNotIn("Checking", result.stderr)
 
-    def test_import_only_change_updates_call_edges(self):
+    def test_import_only_change_has_no_changed_function_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run("git", "init", "-q", cwd=root)
@@ -144,14 +135,8 @@ class PythonDiffTests(unittest.TestCase):
                 encoding="utf-8",
             )
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
-            self.assertEqual(
-                {item["id"] for item in graph["functions"]},
-                {"main.py:run", "old.py:helper", "new.py:helper"},
-            )
-            self.assertEqual(
-                [(item["to"], item["label"]) for item in graph["calls"]],
-                [("old.py:helper", "before"), ("new.py:helper", "after")],
-            )
+            self.assertEqual(graph["functions"], [])
+            self.assertEqual(graph["calls"], [])
 
     def test_untracked_python_file_is_a_change(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -169,7 +154,7 @@ class PythonDiffTests(unittest.TestCase):
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
             self.assertEqual(
                 {item["id"] for item in graph["functions"]},
-                {"new.py:added", "existing.py:helper"},
+                {"new.py:added"},
             )
 
     def test_common_names_do_not_pull_in_unrelated_modules(self):
@@ -206,12 +191,11 @@ class PythonDiffTests(unittest.TestCase):
             graph = json.loads(result.stdout)["graph"]
             self.assertEqual(
                 {item["id"] for item in graph["functions"]},
-                {"pkg/core.py:run", "pkg/app.py:entry", "pkg/another.py:entry_two",
-                 "pkg/prefix.py:entry_three"},
+                {"pkg/core.py:run"},
             )
-            self.assertEqual(result.stderr.count("Checking 3 related file(s)"), 2)
+            self.assertNotIn("Checking", result.stderr)
 
-    def test_relative_import_callers_are_kept(self):
+    def test_relative_import_callers_are_excluded_when_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run("git", "init", "-q", cwd=root)
@@ -233,10 +217,10 @@ class PythonDiffTests(unittest.TestCase):
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
             self.assertEqual(
                 {item["id"] for item in graph["functions"]},
-                {"pkg/core.py:run", "pkg/app.py:direct", "pkg/other.py:through_module"},
+                {"pkg/core.py:run"},
             )
 
-    def test_package_and_multiline_import_callers_are_kept(self):
+    def test_package_and_multiline_import_callers_are_excluded_when_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run("git", "init", "-q", cwd=root)
@@ -258,7 +242,33 @@ class PythonDiffTests(unittest.TestCase):
             graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
             self.assertEqual(
                 {item["id"] for item in graph["functions"]},
-                {"pkg/__init__.py:run", "pkg/app.py:direct", "outside.py:external"},
+                {"pkg/__init__.py:run"},
+            )
+
+    def test_calls_between_changed_functions_in_separate_files_are_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run("git", "init", "-q", cwd=root)
+            run("git", "config", "user.name", "Test", cwd=root)
+            run("git", "config", "user.email", "test@example.com", cwd=root)
+            (root / "target.py").write_text("def task():\n    return 1\n", encoding="utf-8")
+            (root / "caller.py").write_text(
+                "from target import task\n\ndef run():\n    return task()\n", encoding="utf-8"
+            )
+            run("git", "add", ".", cwd=root)
+            run("git", "commit", "-qm", "before", cwd=root)
+            (root / "target.py").write_text("def task():\n    return 2\n", encoding="utf-8")
+            (root / "caller.py").write_text(
+                "from target import task\n\ndef run():\n    value = task()\n    return value\n", encoding="utf-8"
+            )
+            graph = json.loads(run(sys.executable, str(SCRIPT), cwd=root).stdout)["graph"]
+            self.assertEqual(
+                {item["id"] for item in graph["functions"]},
+                {"target.py:task", "caller.py:run"},
+            )
+            self.assertEqual(
+                [(item["from"], item["to"], item["label"]) for item in graph["calls"]],
+                [("caller.py:run", "target.py:task", "")],
             )
 
 

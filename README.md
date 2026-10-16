@@ -1,83 +1,82 @@
 # Callscape
 
-Callscape explains code changes as an interactive function call graph. Each function card shows source code or pseudocode before and after the change. Calls point from caller to callee and are numbered and placed in execution order.
+Callscape makes code changes easier to follow. It shows functions as a call graph, with their before-and-after code side by side. Arrows show who calls whom, in call order.
 
-## Requirements and installation
+There are two ways to use it:
 
-- Node.js 20.19+ or 22.12+ (`.nvmrc` selects Node 22)
-- npm
-- Python 3.9+ for `callescape review` (opening saved graphs does not need Python)
+- `callescape review` opens a graph of changes in a Python Git repository. The graph lives in memory; you don't need to create a JSON file.
+- `callscape [folder]` opens Callscape graph JSON files you have saved or written yourself.
 
-From a local checkout, run:
+## Install
+
+You'll need Node.js 20.19+ or 22.12+ and npm. Python 3.9+ is needed only for `callescape review`.
 
 ```bash
+git clone git@github.com:zmxzz/callescape.git
+cd callescape
 bash install.sh
 ```
 
-The installer copies the app into `~/.local/share/callescape`, installs its runtime dependencies, and links both `~/.local/bin/callscape` and `~/.local/bin/callescape`. It will not overwrite unrelated commands at either path. If needed, add `~/.local/bin` to your `PATH`:
+If you already have this checkout, just run `bash install.sh` from its root. The installer installs dependencies and adds both commands under `~/.local/bin`. If your shell can't find them, add that directory to your `PATH`:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Once this repository is public, users can download the installer in one command. Replace `OWNER/REPO` with its published GitHub location:
+The installer won't overwrite unrelated commands. You can use `--prefix DIRECTORY` for another installation location or `--source DIRECTORY` to install from a different local checkout. If the repository is public, `install.sh` also supports `--repo URL` for a downloaded installer.
+
+## Review Python changes
+
+Go to the Python repository you want to inspect and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/install.sh | bash -s -- --repo https://github.com/OWNER/REPO.git
-```
-
-The installer can also take `--ref` to pin a branch or release tag and `--prefix` to choose another user-owned installation directory. There is no public download URL yet. For development without installing, use `npm install` followed by `npm run app -- /path/to/graphs` from this checkout.
-
-## Open a graph folder
-
-```bash
-cd /folder/containing/graph-json
-callscape
-```
-
-Or pass a folder explicitly:
-
-```bash
-callscape /folder/containing/graph-json
-```
-
-The command opens the browser, scans the folder recursively for JSON files, and loads the first valid graph. The sidebar shows nested files in sorted order. Changes to graph files reload the page. Use a file row's trash action to delete that JSON file after confirmation.
-
-Hidden paths, `node_modules`, `dist`, and root package manifests are excluded from discovery. Deletion is limited to safe JSON files inside the selected graph folder.
-
-## Review a Python Git diff
-
-From a Python Git repository, compare `HEAD` with your current working tree:
-
-```bash
+cd /path/to/python-project
 callescape review
 ```
 
-To compare two committed revisions, or to run outside that repository:
+This compares the current working tree with `HEAD` and opens the graph in your browser. To compare two commits instead:
 
 ```bash
-callescape review /path/to/python-repo --base HEAD~1 --head HEAD
+callescape review --base HEAD~1 --head HEAD
 ```
 
-Review analyzes both revisions with Python's standard-library `ast`, then opens the graph in Callscape. The generated JSON stays in server memory: no graph file is created and the delete control is unavailable in review mode. It reads source but never runs the analyzed code. The graph contains changed functions and direct callers/callees, with exact source text on each side. It resolves local functions, straightforward imports, and same-class `self`/`cls` method calls. Dynamic dispatch and calls into external libraries are omitted rather than guessed. Function matching is by path and qualified name, so renames appear as removal and addition. Restart the command to analyze newer edits.
+You can also pass the repository path, so you don't have to change directories:
 
-## Graph JSON
+```bash
+callescape review /path/to/python-project
+```
+
+Review reads Python source but never runs it. It shows changed functions and their direct callers and callees, using the actual source on both sides. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Restart the command to pick up new edits.
+
+Nothing is saved to the repository: the review graph stays in memory, and the delete button is disabled in review mode.
+
+## Open saved graphs
+
+If you have Callscape JSON files, point the viewer at their folder:
+
+```bash
+callscape /path/to/graphs
+```
+
+Or run `callscape` from inside that folder. It finds JSON files in subfolders, shows them in the sidebar, and reloads when they change. You can delete a selected graph file from the sidebar after confirming. Hidden folders, `node_modules`, `dist`, and root package manifests are skipped; deletion is restricted to JSON files inside the chosen folder.
+
+A small graph looks like this:
 
 ```json
 {
-  "title": "Checkout payment extraction",
+  "title": "Move payment out of checkout",
   "functions": [
     {
       "id": "checkout",
       "name": "checkout(cart)",
-      "file": "src/checkout.ts",
-      "before": "validateCart(cart)\nreturn saveOrder(cart)",
-      "after": "validateCart(cart)\nreceipt = processPayment(cart)\nreturn saveOrder(cart, receipt)"
+      "file": "src/checkout.py",
+      "before": "return charge_card(cart)",
+      "after": "return process_payment(cart)"
     },
     {
       "id": "payment",
-      "name": "processPayment(cart)",
-      "file": "src/payment.ts",
+      "name": "process_payment(cart)",
+      "file": "src/payment.py",
       "before": "",
       "after": "return gateway.charge(cart.total)"
     }
@@ -88,20 +87,17 @@ Review analyzes both revisions with Python's standard-library `ast`, then opens 
 }
 ```
 
-`functions` is required. Each function needs a unique string `id` and at least one non-empty `before` or `after` behavior string. `name`, `file`, `title`, `calls`, and call `label` are optional. A function with different populated sides is modified; identical populated sides are unchanged; only `after` is added; only `before` is removed. Every call endpoint must reference a function ID. Put calls from each caller in execution order; the UI adds sequence numbers.
+Each function needs a unique `id` and a nonempty `before` or `after` side. Keep unchanged lines identical on both sides so they stay neutral; removed lines appear red and added lines green. Put each caller's `calls` in call order. See [example.json](example.json) for a fuller example and [the JSON format reference](skills/callescape/references/json-format.md) for all fields and conventions.
 
-Write code-shaped pseudocode and keep unchanged lines textually identical so they render neutral. Removed lines render red and added lines green. The viewer also accepts legacy behavior arrays and strips lines containing only `====================`.
+## Work on Callscape
 
-See [example.json](example.json) for a longer graph with all three function states, parallel calls, and long lines.
-
-## Development and builds
+From the repository checkout:
 
 ```bash
+npm install
 npm run dev
-npm run build
-npm start
 ```
 
-`npm run dev` uses this repository as the graph folder unless `CALLSCAPE_GRAPH_ROOT` is set. `npm run build` embeds a snapshot of the discovered graph files into `dist/`. Static preview from `npm start` does not provide live filesystem refresh or the delete endpoint. Use `callscape` for the full workflow.
+`npm run dev` uses the checkout as its graph folder unless you set `CALLSCAPE_GRAPH_ROOT`. `npm run build` creates a static snapshot in `dist/`; that build does not watch graph files or provide the delete endpoint. For the full folder workflow, use `callscape [folder]`.
 
-The repository keeps generated `dist/` and `node_modules/` out of Git. Vite and its React plugin are runtime dependencies because the CLI starts Vite. Run the Python review tests with `python3 -m unittest discover -s tests -v`. There is no lint script.
+Run the Python review tests with `python3 -m unittest discover -s tests -v`. There is no lint script.

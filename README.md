@@ -106,4 +106,4 @@ npm run dev
 
 `npm run dev` uses the checkout as its graph folder unless you set `CALLSCAPE_GRAPH_ROOT`. `npm run build` creates a static snapshot in `dist/`; that build does not watch graph files or provide the delete endpoint. For the full folder workflow, use `callscape [folder]`.
 
-Run the Python review tests with `python3 -m unittest discover -s tests -v`. There is no lint script.
+Run the JavaScript tests with `npm test` (Vitest) and the Python review tests with `python3 -m unittest discover -s tests -v`. There is no lint script.

@@ -60,7 +60,7 @@ async function discover(graphRoot, directory = graphRoot, relativeDirectory = ''
   return files
 }
 
-function graphFilesPlugin(graphRoot, reviewGraph) {
+function graphFilesPlugin(graphRoot, reviewGraph, reviewMode, analyzeReviewMode) {
   return {
     name: 'callscape-graph-files',
     resolveId(id) {
@@ -82,10 +82,39 @@ function graphFilesPlugin(graphRoot, reviewGraph) {
         `export const graphRootName = ${JSON.stringify(path.basename(graphRoot))};`,
         `export const graphRootPath = ${JSON.stringify(graphRoot)};`,
         `export const graphReadOnly = ${Boolean(reviewGraph)};`,
+        `export const initialReviewMode = ${JSON.stringify(reviewMode || null)};`,
       ].join('\n')
     },
     configureServer(server) {
-      if (reviewGraph) return
+      if (reviewGraph) {
+        server.middlewares.use('/__callscape/review', async (request, response) => {
+          if (request.method !== 'POST') {
+            response.writeHead(405, { Allow: 'POST' }).end()
+            return
+          }
+          try {
+            let body = ''
+            for await (const chunk of request) {
+              body += chunk
+              if (body.length > 1024) {
+                response.writeHead(413).end('Review request is too large')
+                return
+              }
+            }
+            const mode = JSON.parse(body).mode
+            if (!['uncommitted', 'last-commit', 'against-main'].includes(mode)) {
+              response.writeHead(400).end('Unknown review comparison')
+              return
+            }
+            const graph = await analyzeReviewMode(mode)
+            response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+              .end(JSON.stringify(graph))
+          } catch (error) {
+            response.writeHead(422).end(error.message)
+          }
+        })
+        return
+      }
       server.watcher.add(graphRoot)
       const refresh = (file) => {
         if (!safeGraphPath(graphRoot, path.resolve(file))) return
@@ -138,9 +167,11 @@ function graphFilesPlugin(graphRoot, reviewGraph) {
 export function createCallscapeConfig({
   graphRoot = process.env.CALLSCAPE_GRAPH_ROOT || process.cwd(),
   reviewGraph = null,
+  reviewMode = null,
+  analyzeReviewMode = null,
 } = {}) {
   const resolvedRoot = path.resolve(graphRoot)
-  return { plugins: [react(), graphFilesPlugin(resolvedRoot, reviewGraph)] }
+  return { plugins: [react(), graphFilesPlugin(resolvedRoot, reviewGraph, reviewMode, analyzeReviewMode)] }
 }
 
 export default defineConfig(createCallscapeConfig())

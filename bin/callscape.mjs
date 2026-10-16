@@ -11,39 +11,78 @@ const usage = `Usage: callscape [folder]
 Start Callscape for graph JSON files, or review a Python Git diff in memory.
 Review compares HEAD with the working tree by default and requires Python 3.9+.`
 
+async function runCommand(command, arguments_) {
+  const child = spawn(command, arguments_, { stdio: ['ignore', 'pipe', 'pipe'] })
+  const stdout = []
+  const stderr = []
+  child.stdout.on('data', (chunk) => stdout.push(chunk))
+  child.stderr.on('data', (chunk) => stderr.push(chunk))
+  const code = await new Promise((resolve, reject) => {
+    child.on('error', reject)
+    child.on('close', resolve)
+  })
+  return {
+    code,
+    stdout: Buffer.concat(stdout).toString('utf8'),
+    stderr: Buffer.concat(stderr).toString('utf8'),
+  }
+}
+
+async function analyze(arguments_) {
+  const script = fileURLToPath(new URL('../scripts/generate_python_diff.py', import.meta.url))
+  const result = await runCommand('python3', [script, ...arguments_])
+  if (result.stderr) process.stderr.write(result.stderr)
+  if (result.code !== 0) throw new Error(result.stderr.trim() || `Python analysis exited with status ${result.code}`)
+  const { repository, graph } = JSON.parse(result.stdout)
+  const { normalizeGraph } = await import('../src/graph.js')
+  normalizeGraph(graph)
+  return { repository, graph }
+}
+
+async function mainBase(repository) {
+  for (const ref of ['refs/heads/main', 'refs/remotes/origin/main']) {
+    const result = await runCommand('git', ['-C', repository, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+    if (result.code === 0) {
+      const mergeBase = await runCommand('git', ['-C', repository, 'merge-base', 'HEAD', result.stdout.trim()])
+      if (mergeBase.code !== 0) throw new Error(mergeBase.stderr.trim() || 'Could not find a merge base with main')
+      return mergeBase.stdout.trim()
+    }
+  }
+  throw new Error('No main or origin/main branch found in this repository')
+}
+
 async function review(arguments_) {
   if (arguments_.length === 1 && ['--help', '-h'].includes(arguments_[0])) {
     console.log(usage)
     return
   }
-  const script = fileURLToPath(new URL('../scripts/generate_python_diff.py', import.meta.url))
-  const child = spawn('python3', [script, ...arguments_], { stdio: ['ignore', 'pipe', 'inherit'] })
-  const chunks = []
-  child.stdout.on('data', (chunk) => chunks.push(chunk))
-  const code = await new Promise((resolve, reject) => {
-    child.on('error', reject)
-    child.on('close', resolve)
-  })
-  if (code !== 0) throw new Error(`Python analysis exited with status ${code}`)
-  const { repository, graph } = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  const { normalizeGraph } = await import('../src/graph.js')
-  normalizeGraph(graph)
-  await startServer(repository, graph)
+  const initial = await analyze(arguments_)
+  const initialMode = arguments_.some((argument) => ['--base', '--head'].includes(argument) || argument.startsWith('--base=') || argument.startsWith('--head=')) ? 'custom' : 'uncommitted'
+  const analyzeMode = async (mode) => {
+    if (mode === 'uncommitted') return (await analyze([initial.repository])).graph
+    if (mode === 'last-commit') return (await analyze([initial.repository, '--base', 'HEAD~1', '--head', 'HEAD'])).graph
+    if (mode === 'against-main') {
+      const base = await mainBase(initial.repository)
+      return (await analyze([initial.repository, '--base', base])).graph
+    }
+    throw new Error('Unknown review comparison')
+  }
+  await startServer(initial.repository, { graph: initial.graph, initialMode, analyzeMode })
 }
 
-async function startServer(graphRoot, reviewGraph = null) {
+async function startServer(graphRoot, review = null) {
   const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
   const { createServer } = await import('vite')
   const { createCallscapeConfig } = await import('../vite.config.js')
   const server = await createServer({
     root: appRoot,
     configFile: false,
-    ...createCallscapeConfig({ graphRoot, reviewGraph }),
+    ...createCallscapeConfig({ graphRoot, reviewGraph: review?.graph, reviewMode: review?.initialMode, analyzeReviewMode: review?.analyzeMode }),
     server: { open: true },
   })
   await server.listen()
 
-  console.log(reviewGraph ? `Reviewing Python changes in ${graphRoot} (in memory)` : `Graph folder: ${graphRoot}`)
+  console.log(review ? `Reviewing Python changes in ${graphRoot} (in memory)` : `Graph folder: ${graphRoot}`)
   server.printUrls()
 
   let closing = false

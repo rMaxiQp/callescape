@@ -9,7 +9,9 @@ There are two ways to use it:
 
 ## Install
 
-`install.sh` installs the Codex authoring skill for your user account:
+You'll need Node.js 20.19+ or 22.12+ and npm. Python 3.9+ is needed only for `callescape review`.
+
+Install Callscape and the Codex authoring skill for your user account:
 
 ```bash
 git clone git@github.com:zmxzz/callescape.git
@@ -17,32 +19,38 @@ cd callescape
 bash install.sh
 ```
 
-From a checkout, the installer links `~/.codex/skills/callescape` to `skills/callescape` so skill edits stay current. It respects `CODEX_HOME` if set. Use `--source DIRECTORY` for another checkout, or `--repo URL` to copy only the skill from a published Git repository. It does not install app dependencies or CLI commands, and it won't overwrite an existing unrelated skill.
+The installer installs runtime dependencies, adds `callscape` and `callescape` under `~/.local/bin`, and links the Codex skill under `~/.codex/skills/callescape`. From a checkout, the skill link points to the canonical `skills/callescape` directory so edits stay current. The installer respects `CODEX_HOME` and won't overwrite unrelated commands or skills. If your shell can't find the commands, add the bin directory to your `PATH`:
 
-To run the app from this checkout, install Node.js 20.19+ or 22.12+ and npm, then run `npm ci`. Python 3.9+ is needed only for `callescape review`.
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Use `--prefix DIRECTORY` for another app installation location, `--source DIRECTORY` for another local checkout, or `--repo URL` for a published Git repository.
 
 ## Review Python changes
 
-From the Callscape checkout, pass the Python repository you want to inspect:
+Go to the Python repository you want to inspect and run:
 
 ```bash
-npm run app -- review /path/to/python-project
+cd /path/to/python-project
+callescape review
 ```
 
 This compares the current working tree with `HEAD` and opens the graph in your browser. To compare two commits instead:
 
 ```bash
-npm run app -- review /path/to/python-project --base HEAD~1 --head HEAD
+callescape review --base HEAD~1 --head HEAD
 ```
 
-You can also run the script from the Python repository to review its current directory:
+In review mode, use the comparison dropdown at the top left to switch between uncommitted changes (`HEAD` versus the working tree), the last commit (`HEAD~1` versus `HEAD`), and changes against main (the merge base of `HEAD` and local `main`, or `origin/main`, versus the working tree). A comparison passed with `--base` or `--head` initially appears as “Custom comparison.” Switching choices recomputes the graph in memory without restarting the app. The last-commit choice requires a parent commit; the main choice requires a `main` or `origin/main` ref.
+
+You can also pass the repository path, so you don't have to change directories:
 
 ```bash
-cd /path/to/python-project
-node /path/to/callescape/bin/callscape.mjs review
+callescape review /path/to/python-project
 ```
 
-Review reads Python source but never runs it. It starts with changed Python files, then narrows direct-caller candidates by imports and call names and loads directly imported callees. It does not parse every Python file in the repository. It shows changed functions and those direct dependencies using the actual source on both sides. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Restart the command to pick up new edits.
+Review reads Python source but never runs it. It starts with changed Python files, then narrows direct-caller candidates by imports and call names and loads directly imported callees. It does not parse every Python file in the repository. It shows changed functions and those direct dependencies using the actual source on both sides. Because Python can choose call targets at runtime, Callscape leaves calls it cannot resolve out of the graph rather than guessing. Renamed functions appear as a removal and an addition. Switch comparisons or restart the command to pick up newer edits.
 
 Nothing is saved to the repository: the review graph stays in memory, and the delete button is disabled in review mode.
 
@@ -51,10 +59,10 @@ Nothing is saved to the repository: the review graph stays in memory, and the de
 If you have Callscape JSON files, point the viewer at their folder:
 
 ```bash
-npm run app -- /path/to/graphs
+callscape /path/to/graphs
 ```
 
-Run these commands from the Callscape checkout. To use the current directory as the graph folder, run `npm run app`. The app finds JSON files in subfolders, shows them in the sidebar, and reloads when they change. You can delete a selected graph file from the sidebar after confirming. Hidden folders, `node_modules`, `dist`, and root package manifests are skipped; deletion is restricted to JSON files inside the chosen folder.
+Or run `callscape` from inside that folder. The app finds JSON files in subfolders, shows them in the sidebar, and reloads when they change. You can delete a selected graph file from the sidebar after confirming. Hidden folders, `node_modules`, `dist`, and root package manifests are skipped; deletion is restricted to JSON files inside the chosen folder.
 
 A small graph looks like this:
 

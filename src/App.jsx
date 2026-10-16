@@ -22,7 +22,7 @@ import {
   PanelLeftOpen,
   Trash2,
 } from 'lucide-react'
-import { graphFileSources, graphReadOnly, graphRootName, graphRootPath } from 'virtual:graph-files'
+import { graphFileSources, graphReadOnly, graphRootName, graphRootPath, initialReviewMode } from 'virtual:graph-files'
 import { diffPseudocode, firstValidGraph, parseGraph } from './graph.js'
 import { layoutGraph } from './layout.js'
 
@@ -212,6 +212,8 @@ export default function App() {
   const [resizing, setResizing] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [reviewMode, setReviewMode] = useState(initialReviewMode)
+  const [reviewLoading, setReviewLoading] = useState(false)
   const paths = Object.keys(graphFileSources).sort()
   const absolutePath = graphReadOnly
     ? `${graphRootPath} · in-memory review`
@@ -248,6 +250,26 @@ export default function App() {
     }
   }
 
+  async function changeReviewMode(mode) {
+    if (!graphReadOnly || mode === reviewMode || reviewLoading) return
+    setReviewLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/__callscape/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
+      if (!response.ok) throw new Error(await response.text() || `Review failed (${response.status})`)
+      setGraph(parseGraph(await response.text()))
+      setReviewMode(mode)
+    } catch (cause) {
+      setError(`Could not update review: ${cause.message}`)
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
   async function confirmDelete() {
     if (graphReadOnly || !deleteCandidate || deleting) return
     setDeleting(true)
@@ -272,10 +294,26 @@ export default function App() {
       <aside className={`sidebar${sidebarOpen ? '' : ' collapsed'}`} style={{ width: sidebarOpen ? sidebarWidth : 0 }}>
         <div className="sidebar-heading">
           <span>{graphReadOnly ? 'REVIEW' : 'GRAPH FILES'}</span>
-          <span className="file-count">{paths.length}</span>
+          {!graphReadOnly && <span className="file-count">{paths.length}</span>}
         </div>
+        {graphReadOnly && (
+          <div className="review-selector">
+            <label htmlFor="review-mode">Compare</label>
+            <select id="review-mode" value={reviewMode} disabled={reviewLoading} onChange={(event) => changeReviewMode(event.target.value)}>
+              {reviewMode === 'custom' && <option value="custom">Custom comparison</option>}
+              <option value="uncommitted">Uncommitted changes</option>
+              <option value="last-commit">Last commit</option>
+              <option value="against-main">Changes against main</option>
+            </select>
+            {reviewLoading && <span role="status">Analyzing…</span>}
+          </div>
+        )}
         <div className="sidebar-scroll">
-          <FolderTree paths={paths} activePath={activePath} onOpen={openGraph} onDelete={graphReadOnly ? null : setDeleteCandidate} />
+          {graphReadOnly ? (
+            <p className="review-hint">The graph stays in memory. Choose a comparison to rebuild it.</p>
+          ) : (
+            <FolderTree paths={paths} activePath={activePath} onOpen={openGraph} onDelete={setDeleteCandidate} />
+          )}
         </div>
         <div className="sidebar-legend">
           <div><span className="legend-swatch removed" /> Deleted lines</div>
@@ -305,7 +343,7 @@ export default function App() {
             {error} <button onClick={() => setError(null)}>Dismiss</button>
           </div>
         )}
-        {graph ? <GraphCanvas key={`${activePath}-${direction}`} graph={graph} direction={direction} /> : (
+        {graph ? <GraphCanvas key={`${activePath}-${direction}-${reviewMode}`} graph={graph} direction={direction} /> : (
           <div className="empty-state">No valid graph JSON files in {graphRootName}.</div>
         )}
       </section>

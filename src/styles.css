@@ -270,6 +270,50 @@ code {
   letter-spacing: 0;
 }
 
+.review-selector {
+  display: grid;
+  gap: 7px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #2b3c52;
+}
+
+.review-selector label {
+  color: #a8b9ce;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.review-selector select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #41536c;
+  border-radius: 6px;
+  background: #1b2b40;
+  color: #e4edf7;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.review-selector select:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.review-selector [role="status"] {
+  color: #a8b9ce;
+  font-size: 11px;
+}
+
+.review-hint {
+  margin: 4px 16px;
+  color: #8fa3ba;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .sidebar-scroll {
   flex: 1;
   min-height: 0;

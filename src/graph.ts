@@ -1,6 +1,39 @@
 const LEGACY_SEPARATOR = '===================='
 
-function normalizePseudocode(value, field, id) {
+export interface GraphFunction {
+  id: string
+  name: string
+  file: string
+  before: string
+  after: string
+}
+
+export interface GraphCall {
+  from: string
+  to: string
+  label: string
+}
+
+export interface Graph {
+  title: string
+  functions: GraphFunction[]
+  calls: GraphCall[]
+}
+
+export type DiffLineType = 'unchanged' | 'removed' | 'added'
+
+export interface DiffLine {
+  text: string
+  type: DiffLineType
+  group: number
+  pair: number | null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizePseudocode(value: unknown, field: string, id: string): string {
   if (value == null) return ''
   if (Array.isArray(value)) value = value.join('\n')
   if (typeof value !== 'string') {
@@ -12,8 +45,8 @@ function normalizePseudocode(value, field, id) {
     .trim()
 }
 
-export function normalizeGraph(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+export function normalizeGraph(input: unknown): Graph {
+  if (!isRecord(input)) {
     throw new Error('Graph must be an object.')
   }
   if (!Array.isArray(input.functions)) {
@@ -26,9 +59,9 @@ export function normalizeGraph(input) {
     throw new Error('Graph calls must be an array.')
   }
 
-  const ids = new Set()
-  const functions = input.functions.map((entry, index) => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+  const ids = new Set<string>()
+  const functions = input.functions.map((entry: unknown, index): GraphFunction => {
+    if (!isRecord(entry)) {
       throw new Error(`Function ${index + 1} must be an object.`)
     }
     if (typeof entry.id !== 'string' || !entry.id.trim()) {
@@ -59,8 +92,8 @@ export function normalizeGraph(input) {
     }
   })
 
-  const calls = (input.calls || []).map((call, index) => {
-    if (!call || typeof call !== 'object' || Array.isArray(call)) {
+  const calls = (input.calls || []).map((call: unknown, index): GraphCall => {
+    if (!isRecord(call)) {
       throw new Error(`Call ${index + 1} must be an object.`)
     }
     if (typeof call.from !== 'string' || !ids.has(call.from)) {
@@ -78,11 +111,11 @@ export function normalizeGraph(input) {
   return { title: input.title || 'Untitled call graph', functions, calls }
 }
 
-export function parseGraph(source) {
+export function parseGraph(source: string): Graph {
   return normalizeGraph(JSON.parse(source))
 }
 
-export function firstValidGraph(sources) {
+export function firstValidGraph(sources: Record<string, string>): { path: string | null; graph: Graph | null } {
   const paths = Object.keys(sources).sort()
   for (const path of paths) {
     try {
@@ -94,12 +127,17 @@ export function firstValidGraph(sources) {
   return { path: null, graph: null }
 }
 
-export function diffPseudocode(before, after) {
+interface Hunk {
+  removed: DiffLine[]
+  added: DiffLine[]
+}
+
+export function diffPseudocode(before: string, after: string): { before: DiffLine[]; after: DiffLine[] } {
   const beforeLines = before ? before.split('\n') : []
   const afterLines = after ? after.split('\n') : []
   const n = beforeLines.length
   const m = afterLines.length
-  const matrix = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0))
+  const matrix = Array.from({ length: n + 1 }, () => Array<number>(m + 1).fill(0))
 
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
@@ -111,12 +149,12 @@ export function diffPseudocode(before, after) {
 
   // A group is either one unchanged pair or one run of changes between unchanged
   // lines. Lines sharing a pair id are the same line on both sides.
-  const beforeDiff = []
-  const afterDiff = []
-  const hunks = []
+  const beforeDiff: DiffLine[] = []
+  const afterDiff: DiffLine[] = []
+  const hunks: Hunk[] = []
   let group = -1
   let nextPair = 0
-  let hunk = null
+  let hunk: Hunk | null = null
   let i = 0
   let j = 0
   while (i < n || j < m) {
@@ -134,11 +172,11 @@ export function diffPseudocode(before, after) {
       hunks.push(hunk)
     }
     if (j >= m || (i < n && matrix[i + 1][j] >= matrix[i][j + 1])) {
-      const line = { text: beforeLines[i++], type: 'removed', group, pair: null }
+      const line: DiffLine = { text: beforeLines[i++], type: 'removed', group, pair: null }
       beforeDiff.push(line)
       hunk.removed.push(line)
     } else {
-      const line = { text: afterLines[j++], type: 'added', group, pair: null }
+      const line: DiffLine = { text: afterLines[j++], type: 'added', group, pair: null }
       afterDiff.push(line)
       hunk.added.push(line)
     }
@@ -155,11 +193,11 @@ export function diffPseudocode(before, after) {
 
 const MIN_PAIR_SIMILARITY = 0.5
 
-function lineWords(text) {
+function lineWords(text: string): Set<string> {
   return new Set(text.match(/[A-Za-z_$][\w$]*/g) ?? [])
 }
 
-function similarity(a, b) {
+function similarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0
   let shared = 0
   for (const word of a) if (b.has(word)) shared++
@@ -168,14 +206,14 @@ function similarity(a, b) {
 
 // Order-preserving alignment that maximizes total similarity, so pairs never
 // cross and each line pairs at most once.
-function pairSimilarLines(removed, added) {
+function pairSimilarLines(removed: DiffLine[], added: DiffLine[]): Array<[DiffLine, DiffLine]> {
   const removedWords = removed.map((line) => lineWords(line.text))
   const addedWords = added.map((line) => lineWords(line.text))
-  const score = (r, a) => {
+  const score = (r: number, a: number): number => {
     const value = similarity(removedWords[r], addedWords[a])
     return value >= MIN_PAIR_SIMILARITY ? value : 0
   }
-  const best = Array.from({ length: removed.length + 1 }, () => Array(added.length + 1).fill(0))
+  const best = Array.from({ length: removed.length + 1 }, () => Array<number>(added.length + 1).fill(0))
   for (let r = removed.length - 1; r >= 0; r--) {
     for (let a = added.length - 1; a >= 0; a--) {
       const matched = score(r, a) > 0 ? score(r, a) + best[r + 1][a + 1] : 0
@@ -183,7 +221,7 @@ function pairSimilarLines(removed, added) {
     }
   }
 
-  const pairs = []
+  const pairs: Array<[DiffLine, DiffLine]> = []
   let r = 0
   let a = 0
   while (r < removed.length && a < added.length) {
@@ -200,13 +238,13 @@ function pairSimilarLines(removed, added) {
 
 // A callee's bare name is its name up to the parameter list, after any
 // qualifier, so "Payments.chargeCard(card)" is looked up as "chargeCard".
-export function calleeIdentifier(func) {
+export function calleeIdentifier(func: Pick<GraphFunction, 'id' | 'name'>): string {
   const bare = func.name.split('(')[0].trim()
   const member = bare.split('.').pop()
   return member || bare || func.id
 }
 
-export function callSiteLines(lines, callee) {
+export function callSiteLines(lines: string[], callee: Pick<GraphFunction, 'id' | 'name'>): number[] {
   const identifier = calleeIdentifier(callee).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const pattern = new RegExp(`(?<![\\w$])${identifier}(?![\\w$])`)
   return lines.flatMap((text, index) => (pattern.test(text) ? [index] : []))

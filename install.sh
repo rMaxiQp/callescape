@@ -57,9 +57,9 @@ if [ -z "$source_dir" ] && [ -z "$repo_url" ]; then
   fail "No repository URL was provided. Use --repo URL, or run this script from a Callscape checkout."
 fi
 
-command -v node >/dev/null 2>&1 || fail "Node.js 20.19+ or 22.12+ is required"
+command -v node >/dev/null 2>&1 || fail "Node.js 22.18+ or 24+ is required"
 command -v npm >/dev/null 2>&1 || fail "npm is required"
-node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22 ? 0 : 1)' || fail "Node.js 20.19+ or 22.12+ is required (found $(node --version))"
+node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 22 && minor >= 18) || major >= 24 ? 0 : 1)' || fail "Node.js 22.18+ or 24+ is required (found $(node --version))"
 
 if [ -n "$source_dir" ]; then
   [ -d "$source_dir" ] || fail "Source directory does not exist: $source_dir"

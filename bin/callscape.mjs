@@ -34,7 +34,7 @@ async function analyze(arguments_) {
   if (result.stderr) process.stderr.write(result.stderr)
   if (result.code !== 0) throw new Error(result.stderr.trim() || `Python analysis exited with status ${result.code}`)
   const { repository, graph } = JSON.parse(result.stdout)
-  const { normalizeGraph } = await import('../src/graph.js')
+  const { normalizeGraph } = await import('../src/graph.ts')
   normalizeGraph(graph)
   return { repository, graph }
 }

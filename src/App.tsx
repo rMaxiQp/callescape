@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -9,6 +9,9 @@ import {
   Position,
   ReactFlow,
   useNodesState,
+  type Edge,
+  type HandleType,
+  type NodeProps,
 } from '@xyflow/react'
 import {
   ArrowDown,
@@ -23,25 +26,44 @@ import {
   Trash2,
 } from 'lucide-react'
 import { graphFileSources, graphReadOnly, graphRootName, graphRootPath, initialReviewFilters, initialReviewMode } from 'virtual:graph-files'
-import { callSiteLines, diffPseudocode, firstValidGraph, parseGraph } from './graph.js'
-import { layoutGraph } from './layout.js'
+import { callSiteLines, diffPseudocode, firstValidGraph, parseGraph, type DiffLine, type GraphFunction, type Graph } from './graph.ts'
+import { layoutGraph, type CallEdge, type Direction, type FunctionNode as FunctionNodeType, type FunctionStatus } from './layout.ts'
 
 // The edge under the pointer, so the caller's card can mark the lines that
 // produce it. Context keeps hover out of node data, which would re-run layout.
-const HoveredCallContext = createContext(null)
+interface HoveredCall {
+  edgeId: string
+  callerId: string
+  callee: GraphFunction | undefined
+}
 
-function lineHighlight(line, index, hovered, callSites) {
+const HoveredCallContext = createContext<HoveredCall | null>(null)
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+function lineHighlight(line: DiffLine, index: number, hovered: DiffLine | null | undefined, callSites: Set<number> | undefined): string {
   if (callSites?.has(index)) return ' linked'
   if (!hovered) return ''
   if (line === hovered || (hovered.pair != null && line.pair === hovered.pair)) return ' linked'
   return line.group === hovered.group ? ' in-hunk' : ''
 }
 
-function Pseudocode({ lines, side, lineWidth, hovered, onHover, callSites }) {
+interface PseudocodeProps {
+  lines: DiffLine[]
+  side: string
+  lineWidth: number
+  hovered?: DiffLine | null
+  onHover?: (line: DiffLine | null) => void
+  callSites?: Set<number>
+}
+
+function Pseudocode({ lines, side, lineWidth, hovered, onHover, callSites }: PseudocodeProps) {
   return (
     <div className="code-panel">
       <div className="code-panel-heading">{side}</div>
-      <div className="code-lines nodrag nopan" style={{ '--line-width': `${lineWidth}ch` }}>
+      <div className="code-lines nodrag nopan" style={{ '--line-width': `${lineWidth}ch` } as CSSProperties}>
         {lines.map((line, index) => (
           <span
             className={`diff-line ${line.type}${lineHighlight(line, index, hovered, callSites)}`}
@@ -57,7 +79,7 @@ function Pseudocode({ lines, side, lineWidth, hovered, onHover, callSites }) {
   )
 }
 
-function EdgeHandles({ ids, direction, type }) {
+function EdgeHandles({ ids, direction, type }: { ids: string[]; direction: Direction; type: HandleType }) {
   const vertical = direction === 'TB'
   const position = type === 'target'
     ? (vertical ? Position.Top : Position.Left)
@@ -78,10 +100,10 @@ function EdgeHandles({ ids, direction, type }) {
   })
 }
 
-function FunctionNode({ data, selected }) {
+function FunctionNode({ data, selected }: NodeProps<FunctionNodeType>) {
   const { func, status, direction, incoming, outgoing, lineWidth } = data
   const diff = useMemo(() => diffPseudocode(func.before, func.after), [func.before, func.after])
-  const [hovered, setHovered] = useState(null)
+  const [hovered, setHovered] = useState<DiffLine | null>(null)
   const hoveredCall = useContext(HoveredCallContext)
   const callee = hoveredCall?.callerId === func.id ? hoveredCall.callee : null
   const callSites = useMemo(() => callee && {
@@ -112,37 +134,50 @@ function FunctionNode({ data, selected }) {
 
 const nodeTypes = { function: FunctionNode }
 
-function buildFileTree(paths) {
-  const root = { children: new Map() }
+interface TreeEntry {
+  name: string
+  path: string | null
+  children: Map<string, TreeEntry>
+}
+
+function buildFileTree(paths: string[]): Pick<TreeEntry, 'children'> {
+  const root: Pick<TreeEntry, 'children'> = { children: new Map() }
   for (const path of paths) {
     const segments = path.slice(1).split('/')
     let current = root
     for (const [index, segment] of segments.entries()) {
-      if (!current.children.has(segment)) {
-        current.children.set(segment, {
-          name: segment,
-          path: index === segments.length - 1 ? path : null,
-          children: new Map(),
-        })
+      let next = current.children.get(segment)
+      if (!next) {
+        next = { name: segment, path: index === segments.length - 1 ? path : null, children: new Map() }
+        current.children.set(segment, next)
       }
-      current = current.children.get(segment)
+      current = next
     }
   }
   return root
 }
 
-function FolderBranch({ entry, depth, activePath, onOpen, onDelete }) {
+interface FolderBranchProps {
+  entry: TreeEntry
+  depth: number
+  activePath: string | null
+  onOpen: (path: string) => void
+  onDelete?: (path: string) => void
+}
+
+function FolderBranch({ entry, depth, activePath, onOpen, onDelete }: FolderBranchProps) {
   const [expanded, setExpanded] = useState(true)
   const paddingLeft = 12 + depth * 16
 
-  if (entry.path) {
+  const filePath = entry.path
+  if (filePath) {
     return (
-      <div className={`tree-row${entry.path === activePath ? ' active' : ''}`} style={{ paddingLeft }}>
-        <button className="tree-open" onClick={() => onOpen(entry.path)} title={entry.path} aria-current={entry.path === activePath ? 'page' : undefined}>
+      <div className={`tree-row${filePath === activePath ? ' active' : ''}`} style={{ paddingLeft }}>
+        <button className="tree-open" onClick={() => onOpen(filePath)} title={filePath} aria-current={filePath === activePath ? 'page' : undefined}>
           <FileJson2 size={15} aria-hidden="true" />
           <span>{entry.name}</span>
         </button>
-        {onDelete && <button className="tree-delete" onClick={() => onDelete(entry.path)} title={`Delete ${entry.path}`} aria-label={`Delete ${entry.path}`}>
+        {onDelete && <button className="tree-delete" onClick={() => onDelete(filePath)} title={`Delete ${filePath}`} aria-label={`Delete ${filePath}`}>
           <Trash2 size={14} aria-hidden="true" />
         </button>}
       </div>
@@ -164,7 +199,7 @@ function FolderBranch({ entry, depth, activePath, onOpen, onDelete }) {
   )
 }
 
-function FolderTree({ paths, activePath, onOpen, onDelete }) {
+function FolderTree({ paths, activePath, onOpen, onDelete }: Omit<FolderBranchProps, 'entry' | 'depth'> & { paths: string[] }) {
   const root = useMemo(() => buildFileTree(paths), [paths])
   const children = [...root.children.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
   return (
@@ -177,8 +212,8 @@ function FolderTree({ paths, activePath, onOpen, onDelete }) {
   )
 }
 
-function graphEdges(edges, hoveredEdgeId) {
-  return edges.map((edge) => {
+function graphEdges(edges: CallEdge[], hoveredEdgeId: string | undefined): CallEdge[] {
+  return edges.map((edge): CallEdge => {
     const hovered = edge.id === hoveredEdgeId
     const stroke = hovered ? '#b4ceff' : '#8292a9'
     return {
@@ -194,24 +229,26 @@ function graphEdges(edges, hoveredEdgeId) {
   })
 }
 
-function GraphCanvas({ graph, direction }) {
+const MINIMAP_COLORS: Record<FunctionStatus, string> = {
+  modified: '#e9ad56',
+  added: '#6ecf95',
+  removed: '#e38181',
+  unchanged: '#8292a9',
+}
+
+function GraphCanvas({ graph, direction }: { graph: Graph; direction: Direction }) {
   const layout = useMemo(() => layoutGraph(graph, direction), [graph, direction])
   const [nodes, , onNodesChange] = useNodesState(layout.nodes)
   const { edges } = layout
-  const [hoveredCall, setHoveredCall] = useState(null)
+  const [hoveredCall, setHoveredCall] = useState<HoveredCall | null>(null)
   const coloredEdges = useMemo(() => graphEdges(edges, hoveredCall?.edgeId), [edges, hoveredCall])
   const functionsById = useMemo(() => new Map(graph.functions.map((func) => [func.id, func])), [graph])
-  const hoverEdge = (_, edge) => setHoveredCall({
+  const hoverEdge = (_: MouseEvent, edge: Edge) => setHoveredCall({
     edgeId: edge.id,
     callerId: edge.source,
     callee: functionsById.get(edge.target),
   })
-  const miniMapColor = (node) => ({
-    modified: '#e9ad56',
-    added: '#6ecf95',
-    removed: '#e38181',
-    unchanged: '#8292a9',
-  })[node.data.status]
+  const miniMapColor = (node: FunctionNodeType) => MINIMAP_COLORS[node.data.status]
 
   return (
     <div className="canvas">
@@ -232,7 +269,7 @@ function GraphCanvas({ graph, direction }) {
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color="#35445a" />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable nodeColor={miniMapColor} maskColor="rgba(7, 14, 26, .68)" />
+          <MiniMap<FunctionNodeType> pannable zoomable nodeColor={miniMapColor} maskColor="rgba(7, 14, 26, .68)" />
         </ReactFlow>
       </HoveredCallContext.Provider>
     </div>
@@ -243,15 +280,15 @@ export default function App() {
   const [initial] = useState(() => firstValidGraph(graphFileSources))
   const [activePath, setActivePath] = useState(initial.path)
   const [graph, setGraph] = useState(initial.graph)
-  const [error, setError] = useState(null)
-  const [direction, setDirection] = useState('TB')
+  const [error, setError] = useState<string | null>(null)
+  const [direction, setDirection] = useState<Direction>('TB')
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = Number(localStorage.getItem('callscape-sidebar-width'))
     return stored ? Math.max(220, Math.min(560, stored)) : 268
   })
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('callscape-sidebar-open') !== 'false')
   const [resizing, setResizing] = useState(false)
-  const [deleteCandidate, setDeleteCandidate] = useState(null)
+  const [deleteCandidate, setDeleteCandidate] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [reviewMode, setReviewMode] = useState(initialReviewMode)
   const [reviewLoading, setReviewLoading] = useState(false)
@@ -273,7 +310,7 @@ export default function App() {
 
   useEffect(() => {
     if (!resizing) return
-    const move = (event) => setSidebarWidth(Math.max(220, Math.min(560, event.clientX)))
+    const move = (event: PointerEvent) => setSidebarWidth(Math.max(220, Math.min(560, event.clientX)))
     const stop = () => setResizing(false)
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', stop)
@@ -283,18 +320,18 @@ export default function App() {
     }
   }, [resizing])
 
-  function openGraph(path) {
+  function openGraph(path: string) {
     try {
       const nextGraph = parseGraph(graphFileSources[path])
       setGraph(nextGraph)
       setActivePath(path)
       setError(null)
     } catch (cause) {
-      setError(`${path}: ${cause.message}`)
+      setError(`${path}: ${errorMessage(cause)}`)
     }
   }
 
-  async function changeReviewMode(mode) {
+  async function changeReviewMode(mode: string | null) {
     if (!graphReadOnly || reviewLoading) return
     setReviewLoading(true)
     setError(null)
@@ -309,7 +346,7 @@ export default function App() {
       setReviewMode(mode)
       setReviewRevision((revision) => revision + 1)
     } catch (cause) {
-      setError(`Could not update review: ${cause.message}`)
+      setError(`Could not update review: ${errorMessage(cause)}`)
     } finally {
       setReviewLoading(false)
     }
@@ -327,7 +364,7 @@ export default function App() {
       setDeleteCandidate(null)
       window.location.reload()
     } catch (cause) {
-      setError(`Could not delete ${deleteCandidate}: ${cause.message}`)
+      setError(`Could not delete ${deleteCandidate}: ${errorMessage(cause)}`)
       setDeleteCandidate(null)
     } finally {
       setDeleting(false)
@@ -344,7 +381,7 @@ export default function App() {
         {graphReadOnly && (
           <div className="review-selector">
             <label htmlFor="review-mode">Compare</label>
-            <select id="review-mode" value={reviewMode} disabled={reviewLoading} onChange={(event) => changeReviewMode(event.target.value)}>
+            <select id="review-mode" value={reviewMode ?? ''} disabled={reviewLoading} onChange={(event) => changeReviewMode(event.target.value)}>
               {initialReviewMode === 'custom' && <option value="custom">Custom comparison</option>}
               <option value="uncommitted">Uncommitted changes</option>
               <option value="last-commit">Last commit</option>

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
-import { callSiteLines, diffPseudocode } from '../src/graph.js'
+import { callSiteLines, diffPseudocode, type DiffLine } from '../src/graph.ts'
 
-const groups = (lines) => lines.map((line) => line.group)
+const groups = (lines: DiffLine[]) => lines.map((line) => line.group)
 
 test('unchanged lines share a group with their exact counterpart', () => {
   const diff = diffPseudocode('a\nb', 'a\nb')

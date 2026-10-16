@@ -9,7 +9,7 @@ There are two ways to use it:
 
 ## Install
 
-You'll need Node.js 20.19+ or 22.12+ and npm. Python 3.9+ is needed only for `callescape review`.
+You'll need Node.js 22.18+ or 24+ and npm. Python 3.9+ is needed only for `callescape review`.
 
 Install Callscape and the Codex authoring skill for your user account:
 

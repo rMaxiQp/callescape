@@ -22,7 +22,7 @@ import {
   PanelLeftOpen,
   Trash2,
 } from 'lucide-react'
-import { graphFileSources, graphRootName, graphRootPath } from 'virtual:graph-files'
+import { graphFileSources, graphReadOnly, graphRootName, graphRootPath } from 'virtual:graph-files'
 import { diffPseudocode, firstValidGraph, parseGraph } from './graph.js'
 import { layoutGraph } from './layout.js'
 
@@ -116,9 +116,9 @@ function FolderBranch({ entry, depth, activePath, onOpen, onDelete }) {
           <FileJson2 size={15} aria-hidden="true" />
           <span>{entry.name}</span>
         </button>
-        <button className="tree-delete" onClick={() => onDelete(entry.path)} title={`Delete ${entry.path}`} aria-label={`Delete ${entry.path}`}>
+        {onDelete && <button className="tree-delete" onClick={() => onDelete(entry.path)} title={`Delete ${entry.path}`} aria-label={`Delete ${entry.path}`}>
           <Trash2 size={14} aria-hidden="true" />
-        </button>
+        </button>}
       </div>
     )
   }
@@ -173,6 +173,7 @@ function GraphCanvas({ graph, direction }) {
     modified: '#e9ad56',
     added: '#6ecf95',
     removed: '#e38181',
+    unchanged: '#8292a9',
   })[node.data.status]
 
   return (
@@ -212,7 +213,9 @@ export default function App() {
   const [deleteCandidate, setDeleteCandidate] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const paths = Object.keys(graphFileSources).sort()
-  const absolutePath = activePath ? `${graphRootPath.replace(/\/$/, '')}${activePath}` : graphRootPath
+  const absolutePath = graphReadOnly
+    ? `${graphRootPath} · in-memory review`
+    : activePath ? `${graphRootPath.replace(/\/$/, '')}${activePath}` : graphRootPath
 
   useEffect(() => {
     localStorage.setItem('callscape-sidebar-width', String(sidebarWidth))
@@ -246,7 +249,7 @@ export default function App() {
   }
 
   async function confirmDelete() {
-    if (!deleteCandidate || deleting) return
+    if (graphReadOnly || !deleteCandidate || deleting) return
     setDeleting(true)
     try {
       const response = await fetch(`/__callscape/graph-file?path=${encodeURIComponent(deleteCandidate)}`, { method: 'DELETE' })
@@ -268,11 +271,11 @@ export default function App() {
     <main className="app-shell">
       <aside className={`sidebar${sidebarOpen ? '' : ' collapsed'}`} style={{ width: sidebarOpen ? sidebarWidth : 0 }}>
         <div className="sidebar-heading">
-          <span>GRAPH FILES</span>
+          <span>{graphReadOnly ? 'REVIEW' : 'GRAPH FILES'}</span>
           <span className="file-count">{paths.length}</span>
         </div>
         <div className="sidebar-scroll">
-          <FolderTree paths={paths} activePath={activePath} onOpen={openGraph} onDelete={setDeleteCandidate} />
+          <FolderTree paths={paths} activePath={activePath} onOpen={openGraph} onDelete={graphReadOnly ? null : setDeleteCandidate} />
         </div>
         <div className="sidebar-legend">
           <div><span className="legend-swatch removed" /> Deleted lines</div>

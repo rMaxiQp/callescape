@@ -76,6 +76,7 @@ install_root="$prefix/share/callescape"
 bin_dir="$prefix/bin"
 current_link="$install_root/current"
 bin_link="$bin_dir/callscape"
+review_bin_link="$bin_dir/callescape"
 expected_bin_target="$current_link/bin/callscape.mjs"
 
 if [ -e "$current_link" ] && [ ! -L "$current_link" ]; then
@@ -83,6 +84,9 @@ if [ -e "$current_link" ] && [ ! -L "$current_link" ]; then
 fi
 if [ -e "$bin_link" ] || [ -L "$bin_link" ]; then
   [ -L "$bin_link" ] && [ "$(readlink "$bin_link")" = "$expected_bin_target" ] || fail "Existing command is not managed by this installer: $bin_link"
+fi
+if [ -e "$review_bin_link" ] || [ -L "$review_bin_link" ]; then
+  [ -L "$review_bin_link" ] && [ "$(readlink "$review_bin_link")" = "$expected_bin_target" ] || fail "Existing command is not managed by this installer: $review_bin_link"
 fi
 
 mkdir -p "$install_root/releases" "$bin_dir"
@@ -109,9 +113,11 @@ release_dir="$install_root/releases/$(date -u +%Y%m%d%H%M%S)-$$"
 mv "$stage/app" "$release_dir"
 ln -sfn "$release_dir" "$current_link"
 ln -sfn "$expected_bin_target" "$bin_link"
+ln -sfn "$expected_bin_target" "$review_bin_link"
 
 printf 'Installed Callscape at %s\n' "$release_dir"
 printf 'Command: %s\n' "$bin_link"
+printf 'Review command: %s\n' "$review_bin_link"
 case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *) printf 'Add %s to your PATH to run callscape from any folder.\n' "$bin_dir" ;;

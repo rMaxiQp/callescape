@@ -5,7 +5,6 @@ import react from '@vitejs/plugin-react'
 
 const virtualId = 'virtual:graph-files'
 const resolvedVirtualId = `\0${virtualId}`
-const graphRoot = path.resolve(process.env.CALLSCAPE_GRAPH_ROOT || process.cwd())
 
 function isExcluded(name, isRoot) {
   return name.startsWith('.') || name === 'node_modules' || name === 'dist' ||
@@ -16,7 +15,7 @@ function compareEntries(a, b) {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
 }
 
-function safeGraphPath(absolutePath) {
+function safeGraphPath(graphRoot, absolutePath) {
   const relativePath = path.relative(graphRoot, absolutePath)
   if (!relativePath || path.isAbsolute(relativePath)) return false
   const segments = relativePath.split(path.sep)
@@ -25,7 +24,7 @@ function safeGraphPath(absolutePath) {
   return /\.json$/i.test(segments.at(-1))
 }
 
-function resolveRequestedPath(requestedPath) {
+function resolveRequestedPath(graphRoot, requestedPath) {
   if (typeof requestedPath !== 'string' || !requestedPath.startsWith('/') || requestedPath.startsWith('//') || requestedPath.includes('\\') || requestedPath.includes('\0')) {
     return null
   }
@@ -34,7 +33,7 @@ function resolveRequestedPath(requestedPath) {
     return null
   }
   const absolutePath = path.resolve(graphRoot, ...segments)
-  return safeGraphPath(absolutePath) ? absolutePath : null
+  return safeGraphPath(graphRoot, absolutePath) ? absolutePath : null
 }
 
 function isInsideRoot(root, target) {
@@ -42,7 +41,7 @@ function isInsideRoot(root, target) {
   return relativePath && !relativePath.startsWith(`..${path.sep}`) && relativePath !== '..' && !path.isAbsolute(relativePath)
 }
 
-async function discover(directory = graphRoot, relativeDirectory = '') {
+async function discover(graphRoot, directory = graphRoot, relativeDirectory = '') {
   const files = []
   const entries = (await readdir(directory, { withFileTypes: true })).sort(compareEntries)
 
@@ -52,7 +51,7 @@ async function discover(directory = graphRoot, relativeDirectory = '') {
     const relativePath = path.posix.join(relativeDirectory, entry.name)
 
     if (entry.isDirectory()) {
-      files.push(...await discover(absolutePath, relativePath))
+      files.push(...await discover(graphRoot, absolutePath, relativePath))
     } else if (entry.isFile() && /\.json$/i.test(entry.name)) {
       files.push({ absolutePath, relativePath: `/${relativePath}` })
     }
@@ -61,7 +60,7 @@ async function discover(directory = graphRoot, relativeDirectory = '') {
   return files
 }
 
-function graphFilesPlugin() {
+function graphFilesPlugin(graphRoot, reviewGraph) {
   return {
     name: 'callscape-graph-files',
     resolveId(id) {
@@ -70,20 +69,26 @@ function graphFilesPlugin() {
     async load(id) {
       if (id !== resolvedVirtualId) return
       const sources = {}
-      for (const file of await discover()) {
-        this.addWatchFile(file.absolutePath)
-        sources[file.relativePath] = await readFile(file.absolutePath, 'utf8')
+      if (reviewGraph) {
+        sources['/review.json'] = JSON.stringify(reviewGraph)
+      } else {
+        for (const file of await discover(graphRoot)) {
+          this.addWatchFile(file.absolutePath)
+          sources[file.relativePath] = await readFile(file.absolutePath, 'utf8')
+        }
       }
       return [
         `export const graphFileSources = ${JSON.stringify(sources)};`,
         `export const graphRootName = ${JSON.stringify(path.basename(graphRoot))};`,
         `export const graphRootPath = ${JSON.stringify(graphRoot)};`,
+        `export const graphReadOnly = ${Boolean(reviewGraph)};`,
       ].join('\n')
     },
     configureServer(server) {
+      if (reviewGraph) return
       server.watcher.add(graphRoot)
       const refresh = (file) => {
-        if (!safeGraphPath(path.resolve(file))) return
+        if (!safeGraphPath(graphRoot, path.resolve(file))) return
         const module = server.moduleGraph.getModuleById(resolvedVirtualId)
         if (module) server.moduleGraph.invalidateModule(module)
         server.ws.send({ type: 'full-reload' })
@@ -99,7 +104,7 @@ function graphFilesPlugin() {
         }
 
         const url = new URL(request.url, 'http://localhost')
-        const target = resolveRequestedPath(url.searchParams.get('path'))
+        const target = resolveRequestedPath(graphRoot, url.searchParams.get('path'))
         if (!target) {
           response.writeHead(400).end('Invalid graph path')
           return
@@ -130,4 +135,12 @@ function graphFilesPlugin() {
   }
 }
 
-export default defineConfig({ plugins: [react(), graphFilesPlugin()] })
+export function createCallscapeConfig({
+  graphRoot = process.env.CALLSCAPE_GRAPH_ROOT || process.cwd(),
+  reviewGraph = null,
+} = {}) {
+  const resolvedRoot = path.resolve(graphRoot)
+  return { plugins: [react(), graphFilesPlugin(resolvedRoot, reviewGraph)] }
+}
+
+export default defineConfig(createCallscapeConfig())

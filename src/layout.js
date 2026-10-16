@@ -21,6 +21,7 @@ function wrappedLineCount(source, lineWidth) {
 export function functionStatus(func) {
   if (!func.before) return 'added'
   if (!func.after) return 'removed'
+  if (func.before === func.after) return 'unchanged'
   return 'modified'
 }
 

@@ -111,6 +111,7 @@ code {
 .status-badge.modified { background: #493c25; color: #ffd28b; }
 .status-badge.added { background: #1b4235; color: #a7f3ca; }
 .status-badge.removed { background: #4b2a34; color: #ffc1c7; }
+.status-badge.unchanged { background: #304057; color: #c0cede; }
 
 .function-file {
   overflow: hidden;

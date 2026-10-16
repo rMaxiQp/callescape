@@ -33,7 +33,7 @@ Every call endpoint must refer to a function in its `functions` array.
 - `functions`: required array. Each entry needs a unique non-empty string `id` and at least one non-empty `before` or `after` behavior string. Optional `name` defaults to `id`; optional `file` defaults to an empty string.
 - `calls`: optional array. Each `from` and `to` is a function ID in `functions`; optional `label` is a compact string such as `before`, `after`, or a condition. Parallel calls are allowed.
 
-Function status follows populated sides: both means modified, only `after` means added, and only `before` means removed. Calls from a caller must appear in execution order. Callscape uses that order for edge numbers and sibling placement (left to right in vertical layout, top to bottom in horizontal layout). Labels must not contain the UI's sequence number.
+Function status follows populated sides: different populated sides mean modified, identical populated sides mean unchanged, only `after` means added, and only `before` means removed. Calls from a caller must appear in execution order. Callscape uses that order for edge numbers and sibling placement (left to right in vertical layout, top to bottom in horizontal layout). Labels must not contain the UI's sequence number.
 
 ## Pseudocode and diff
 
@@ -48,3 +48,7 @@ For each separate call tree, start the root function's populated sides with the 
 Save a UTF-8 `.json` file beneath the chosen graph folder. Callscape recursively discovers JSON files except hidden paths, `node_modules`, `dist`, and root package manifests. The primary command is `callscape [folder]`; it opens the browser and reloads when files change. If the command is unavailable, run `bash install.sh` from a local checkout or use the published-repository form documented in `README.md`. Its in-app delete action removes only a selected JSON file after confirmation. A static `npm run build` embeds the current files as a snapshot and cannot provide the live delete endpoint.
 
 Unless the user requests another location, use `~/src/Planning/code-visualization` for generated graphs and return an absolute file link.
+
+## Python Git diff review
+
+`callescape review` analyzes Python code at `HEAD` and the working tree, then opens the graph in memory. Pass an optional repository directory and `--base REV --head REV` to compare commits. Python 3.9+ is required for review, but not for viewing saved graphs. The generator uses `ast` and never executes the analyzed code. It includes changed functions and direct callers/callees, preserving exact source on each side. Local functions, straightforward imports, and same-class `self`/`cls` calls can be resolved; dynamic calls and external targets are omitted. Matching is by path and qualified name, so renames appear as removal/addition. No JSON file is written, and review mode has no delete action. Restart the command to analyze newer edits. Inspect the graph for omissions before treating it as a complete call graph.
